@@ -1,8 +1,5 @@
-import {
-  cachedBundleFileExists,
-  isCachedBundleUsable,
-  normalizeLocalPath,
-} from './bundleCache';
+import { normalizeLocalPath } from './bundleCache';
+import { isFeatureLoadedFromOta } from './registerFeature';
 
 declare const global: {
   __r?: (moduleId: number) => unknown;
@@ -41,12 +38,47 @@ async function readBundleCode(bundlePath: string): Promise<string | null> {
   return RNFS.readFile(normalizeLocalPath(bundlePath), 'utf8');
 }
 
+function runFullBundleEval(code: string, path: string): boolean {
+  if (typeof global.globalEvalWithSourceUrl !== 'function') {
+    return false;
+  }
+
+  try {
+    global.globalEvalWithSourceUrl(code, path);
+    return true;
+  } catch (error) {
+    if (__DEV__) {
+      console.warn('[bundleLoader] globalEvalWithSourceUrl failed', error);
+    }
+    return false;
+  }
+}
+
+function runEntryModule(entryModuleId: number): boolean {
+  if (typeof global.__r !== 'function') {
+    return false;
+  }
+
+  try {
+    global.__r(entryModuleId);
+    return true;
+  } catch (error) {
+    if (__DEV__) {
+      console.warn(`[bundleLoader] __r(${entryModuleId}) failed`, error);
+    }
+    return false;
+  }
+}
+
 /**
  * Re-run split bundle entry so registerFeature() executes again after
- * clearFeatureRegistration(). Native registerSegmentWithId may skip re-eval
- * when the segment was already registered in this runtime.
+ * clearFeatureRegistration(). Must run AFTER SplitBundleLoader.load() so
+ * segment module ids exist in the runtime.
  */
-export async function executeSplitBundleEntry(bundlePath: string): Promise<boolean> {
+export async function executeSplitBundleEntry(
+  bundlePath: string,
+  options?: { featureId?: string },
+): Promise<boolean> {
   const path = normalizeLocalPath(bundlePath);
   const code = await readBundleCode(path);
   if (!code) {
@@ -64,28 +96,18 @@ export async function executeSplitBundleEntry(bundlePath: string): Promise<boole
     return false;
   }
 
-  // Segment module ids are scoped — re-eval the bundle file when possible.
-  if (typeof global.globalEvalWithSourceUrl === 'function') {
-    try {
-      global.globalEvalWithSourceUrl(code, path);
-      return true;
-    } catch (error) {
-      if (__DEV__) {
-        console.warn('[bundleLoader] globalEvalWithSourceUrl failed', error);
-      }
-    }
+  const featureId = options?.featureId;
+
+  runEntryModule(entryModuleId);
+  if (featureId && isFeatureLoadedFromOta(featureId)) {
+    return true;
   }
 
-  if (typeof global.__r === 'function') {
-    try {
-      global.__r(entryModuleId);
-      return true;
-    } catch (error) {
-      if (__DEV__) {
-        console.warn(`[bundleLoader] __r(${entryModuleId}) failed`, error);
-      }
-    }
+  runFullBundleEval(code, path);
+  if (featureId && isFeatureLoadedFromOta(featureId)) {
+    return true;
   }
 
-  return false;
+  runEntryModule(entryModuleId);
+  return featureId ? isFeatureLoadedFromOta(featureId) : true;
 }

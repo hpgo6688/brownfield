@@ -20,7 +20,6 @@ import {
   clearFeatureRegistration,
   getFeatureComponent,
   getFeatureSource,
-  syncOtaRegistrationFromCache,
   waitForFeatureComponent,
 } from './registerFeature';
 
@@ -130,10 +129,6 @@ export default function FeatureHost({
           otaMode: true,
         });
 
-        if (!getFeatureComponent(featureId, { otaOnly: true })) {
-          syncOtaRegistrationFromCache(featureId);
-        }
-
         let component = await waitForFeatureComponent(featureId, {
           otaOnly: true,
           timeoutMs: 3000,
@@ -216,12 +211,14 @@ export default function FeatureHost({
                   pollState.pollNow().catch(() => {});
                 }}>
                 <Text style={styles.devPollText}>
-                  OTA poll · active v{pollState.activeVersion ?? '?'} · remote v
+                  {featureId} · active v{pollState.activeVersion ?? '?'} · remote v
                   {pollState.remoteVersion ?? '?'}
                   {pollState.downloading ? ' · 下载中' : ''}
                   {pollState.error ? ` · ${pollState.error}` : ''}
                 </Text>
-                <Text style={styles.devPollHint}>点此立即检查 · 每 20s 自动 poll</Text>
+                <Text style={styles.devPollHint}>
+                  {manifestUrl ?? 'default manifest'} · 点此立即检查 · 每 20s poll
+                </Text>
               </Pressable>
             ) : null}
             {pollState.error && showBanner ? (

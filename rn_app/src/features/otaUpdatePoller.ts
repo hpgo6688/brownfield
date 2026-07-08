@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, type AppStateStatus } from 'react-native';
+import { AppState, DevSettings, type AppStateStatus } from 'react-native';
 import type { PendingFeatureMetadata } from './bundleCache';
 import {
   applyPendingFeature,
@@ -7,7 +7,7 @@ import {
   downloadPendingFeature,
   getPendingUpdate,
 } from './bundleUpdater';
-import { bumpOtaBundleRevision, OTA_POLL_INTERVAL_MS } from './remoteConfig';
+import { bumpOtaBundleRevision, getForceOtaInDev, OTA_POLL_INTERVAL_MS } from './remoteConfig';
 
 export type OtaPollState = {
   pendingUpdate: PendingFeatureMetadata | null;
@@ -133,6 +133,12 @@ export function useOtaUpdatePoller({
       setPendingUpdate(null);
       setActiveVersion(active.version);
       setDismissed(false);
+
+      if (__DEV__ && getForceOtaInDev()) {
+        DevSettings.reload();
+        return;
+      }
+
       bumpOtaBundleRevision();
     } catch (applyError) {
       const message =

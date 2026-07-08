@@ -2,22 +2,21 @@ import type { RemoteFeature } from './manifest';
 import {
   cachedBundleFileExists,
   normalizeLocalPath,
+  readCachedMetadata,
 } from './bundleCache';
 import { getForceOtaInDev } from './remoteConfig';
 import {
   isFeatureLoaded,
   isFeatureLoadedFromOta,
+  stampOtaComponentCacheVersion,
   syncOtaRegistrationFromCache,
 } from './registerFeature';
 import { getFeatureSegmentId } from './segmentRegistry';
 import { executeSplitBundleEntry } from './splitBundleEntry';
 import { isSplitBundleLoaderAvailable, SplitBundleLoader } from './splitBundleLoader';
 
-declare const global: {
-  globalEvalWithSourceUrl?: (source: string, sourceUrl: string) => unknown;
-};
-
 const loadedBundleKeys = new Set<string>();
+const loadedBundlePaths = new Map<string, string>();
 
 function ensureModulesOnlyQuery(bundleUrl: string): string {
   const url = new URL(bundleUrl);
@@ -61,22 +60,47 @@ async function loadFromNativeSplitBundle(
     throw new Error(`Cached bundle file not found: ${path}`);
   }
 
+  const activeMeta = await readCachedMetadata(feature.id);
+  const previousPath = loadedBundlePaths.get(feature.id);
+  const pathChanged =
+    previousPath !== undefined && normalizeLocalPath(previousPath) !== path;
+  const needsRegistration = !isFeatureLoadedFromOta(feature.id);
+
   const segmentId = feature.segmentId ?? getFeatureSegmentId(feature.id);
   if (__DEV__) {
     console.log(
-      `[SplitBundleLoader] native load feature=${feature.id} segmentId=${segmentId} path=${path}`,
+      `[SplitBundleLoader] load feature=${feature.id} segmentId=${segmentId} path=${path} pathChanged=${pathChanged} needsRegistration=${needsRegistration}`,
     );
   }
+
   await SplitBundleLoader!.load(path, segmentId);
-  await executeSplitBundleEntry(path);
+
+  await executeSplitBundleEntry(path, {
+    featureId: feature.id,
+  });
 
   if (!isFeatureLoadedFromOta(feature.id)) {
-    syncOtaRegistrationFromCache(feature.id);
+    syncOtaRegistrationFromCache(feature.id, {
+      expectedVersion: activeMeta?.version ?? null,
+      expectedHash: activeMeta?.hash ?? null,
+      expectedLocalPath: activeMeta?.localPath ?? null,
+    });
   }
 
   if (!isFeatureLoadedFromOta(feature.id)) {
     throw new Error(
       `OTA bundle "${feature.id}" loaded but ota_* component was not registered. Re-upload ota_${feature.id} bundle or reinstall the app.`,
+    );
+  }
+
+  loadedBundlePaths.set(feature.id, path);
+
+  if (activeMeta) {
+    stampOtaComponentCacheVersion(
+      feature.id,
+      activeMeta.version,
+      activeMeta.hash,
+      activeMeta.localPath,
     );
   }
 }
@@ -92,7 +116,7 @@ export async function loadFeatureBundle(
   const localPath = options?.localPath ?? null;
   const useOta = options?.otaMode ?? getForceOtaInDev();
   const loadKey = localPath
-    ? `${feature.id}:${localPath}`
+    ? `${feature.id}:${normalizeLocalPath(localPath)}`
     : `${feature.id}:${feature.bundleUrl}`;
 
   const alreadyLoaded = useOta
@@ -141,6 +165,7 @@ export async function loadFeatureBundle(
 
 export function clearLoadedBundles() {
   loadedBundleKeys.clear();
+  loadedBundlePaths.clear();
 }
 
 export function clearLoadedBundlesForFeature(featureId: string) {
@@ -149,4 +174,5 @@ export function clearLoadedBundlesForFeature(featureId: string) {
       loadedBundleKeys.delete(key);
     }
   }
+  loadedBundlePaths.delete(featureId);
 }

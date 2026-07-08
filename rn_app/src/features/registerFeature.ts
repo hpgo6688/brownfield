@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import { normalizeLocalPath } from './bundleCache';
 
 export type FeatureSource = 'main' | 'ota';
 
@@ -11,6 +12,9 @@ export type FeatureRegistration = {
 type OtaComponentCacheEntry = {
   moduleName: string;
   component: ComponentType;
+  version?: string;
+  hash?: string;
+  localPath?: string;
 };
 
 declare global {
@@ -55,14 +59,104 @@ export function registerFeature(
   }
 }
 
+export function shouldBustOtaComponentCache(
+  featureId: string,
+  activeVersion?: string | null,
+  activeLocalPath?: string | null,
+): boolean {
+  const cached = global.__OTA_COMPONENT_CACHE__?.[featureId];
+  if (!cached) {
+    return false;
+  }
+
+  if (cached.version && activeVersion && cached.version !== activeVersion) {
+    return true;
+  }
+
+  if (
+    cached.localPath &&
+    activeLocalPath &&
+    cached.localPath !== activeLocalPath
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+export function clearOtaComponentCache(featureId?: string) {
+  if (!global.__OTA_COMPONENT_CACHE__) {
+    return;
+  }
+
+  if (featureId == null) {
+    global.__OTA_COMPONENT_CACHE__ = {};
+    return;
+  }
+
+  delete global.__OTA_COMPONENT_CACHE__[featureId];
+}
+
+export function stampOtaComponentCacheVersion(
+  featureId: string,
+  version: string,
+  hash: string,
+  localPath?: string,
+) {
+  const entry = global.__OTA_COMPONENT_CACHE__?.[featureId];
+  if (!entry) {
+    return;
+  }
+
+  entry.version = version;
+  entry.hash = hash;
+  if (localPath) {
+    entry.localPath = localPath;
+  }
+}
+
 /**
  * Native split segments stay loaded across mode switches, but
  * clearFeatureRegistration() wipes JS registry. Rehydrate from cache when
  * registerSegmentWithId skips re-eval on the second OTA load.
+ * Only restores when cache matches the active bundle version on disk.
  */
-export function syncOtaRegistrationFromCache(featureId: string): boolean {
+export function syncOtaRegistrationFromCache(
+  featureId: string,
+  options?: {
+    expectedVersion?: string | null;
+    expectedHash?: string | null;
+    expectedLocalPath?: string | null;
+  },
+): boolean {
   const cached = global.__OTA_COMPONENT_CACHE__?.[featureId];
   if (!cached) {
+    return false;
+  }
+
+  if (
+    options?.expectedVersion &&
+    cached.version &&
+    cached.version !== options.expectedVersion
+  ) {
+    return false;
+  }
+
+  if (
+    options?.expectedHash &&
+    cached.hash &&
+    options.expectedHash.startsWith('sha256:') &&
+    cached.hash.startsWith('sha256:') &&
+    options.expectedHash !== cached.hash
+  ) {
+    return false;
+  }
+
+  if (
+    options?.expectedLocalPath &&
+    cached.localPath &&
+    normalizeLocalPath(options.expectedLocalPath) !== normalizeLocalPath(cached.localPath)
+  ) {
     return false;
   }
 
