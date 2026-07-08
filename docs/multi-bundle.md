@@ -46,6 +46,8 @@ Brownfield 的 `ReactNativeBrownfield.shared` 是**单例**——整个 App 共�
 | 各业务线独立发版 / OTA | **Split Bundle + 远程 bundle** 或 **Re.Pack Module Federation** |
 | 完全隔离（不同 RN 版本/依赖） | **多个独立 RN 工程 + 多 XCFramework**（成本最高） |
 
+方案 2 的 OTA 热更新设计与路线图见 [dynamic-multi-bundle.md](./dynamic-multi-bundle.md#ota-热更新)。
+
 ---
 
 ## 方案一：单 Bundle + 多 moduleName（推荐起步）

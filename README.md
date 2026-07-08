@@ -229,5 +229,5 @@ cd rn_app && npm install && npm start
 ## 参考
 
 - [多 Bundle 方案（不同 RN 页面使用不同 bundle）](docs/multi-bundle.md)
-- [动态多 Bundle（服务端控制入口）](docs/dynamic-multi-bundle.md)
+- [动态多 Bundle（方案 2 + OTA 热更新）](docs/dynamic-multi-bundle.md)
 - [iOS Integration 官方文档](https://oss.callstack.com/react-native-brownfield/docs/getting-started/ios)
