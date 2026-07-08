@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, DevSettings, type AppStateStatus } from 'react-native';
 import type { PendingFeatureMetadata } from './bundleCache';
+import { clearPendingMetadata, deleteCachedBundle } from './bundleCache';
 import {
   applyPendingFeature,
   checkRemoteFeature,
   downloadPendingFeature,
   getPendingUpdate,
+  matchesRemoteRelease,
 } from './bundleUpdater';
 import { bumpOtaBundleRevision, getForceOtaInDev, OTA_POLL_INTERVAL_MS } from './remoteConfig';
 
@@ -76,9 +78,14 @@ export function useOtaUpdatePoller({
 
       const existingPending = await getPendingUpdate(featureId);
       if (existingPending) {
-        setPendingUpdate(existingPending);
-        setDismissed(false);
-        return;
+        if (matchesRemoteRelease(existingPending, check.remoteFeature)) {
+          setPendingUpdate(existingPending);
+          setDismissed(false);
+          return;
+        }
+
+        await clearPendingMetadata(featureId);
+        await deleteCachedBundle(featureId, existingPending.version);
       }
 
       if (!check.updateAvailable || check.remoteFeature.hash === 'sha256:unset') {

@@ -27,6 +27,7 @@ import {
   fetchManifest,
   type RemoteFeature,
 } from './manifest';
+import { clearOtaComponentCache } from './registerFeature';
 
 export type UpdateCheckResult = {
   featureId: string;
@@ -118,7 +119,7 @@ export function needsUpdate(
   const bothValid =
     semver.valid(remote.version) && semver.valid(local.version);
 
-  // Server active rolled below our cached version — keep local; staged downgrade uses pending only.
+  // Bootstrap only: do not auto-downgrade active cache on page entry.
   if (bothValid && semver.lt(remote.version, local.version)) {
     return false;
   }
@@ -132,6 +133,32 @@ export function needsUpdate(
   }
 
   return remote.version !== local.version;
+}
+
+/** Polling / pending: true when remote active differs from local (upgrade or rollback). */
+export function remoteDiffersFromActive(
+  remote: Pick<RemoteFeature, 'version' | 'hash'>,
+  local: Pick<CachedFeatureMetadata, 'version' | 'hash'> | null,
+): boolean {
+  if (!local) {
+    return true;
+  }
+
+  if (normalizeHash(remote.hash) !== normalizeHash(local.hash)) {
+    return true;
+  }
+
+  return remote.version !== local.version;
+}
+
+export function matchesRemoteRelease(
+  meta: Pick<CachedFeatureMetadata | PendingFeatureMetadata, 'version' | 'hash'>,
+  remote: Pick<RemoteFeature, 'version' | 'hash'>,
+): boolean {
+  return (
+    meta.version === remote.version &&
+    normalizeHash(meta.hash) === normalizeHash(remote.hash)
+  );
 }
 
 async function verifyAndPersistActive(
@@ -250,7 +277,7 @@ export async function checkRemoteFeature(
 
   const updateAvailable =
     remoteFeature.hash !== 'sha256:unset' &&
-    (!activeReady || needsUpdate(remoteFeature, active));
+    (!activeReady || remoteDiffersFromActive(remoteFeature, active));
 
   return {
     featureId,
@@ -291,14 +318,6 @@ export async function getPendingUpdate(
     return null;
   }
 
-  // Pending is older than active (e.g. server rolled 0.0.3 → 0.0.5 while 0.0.3 sat in pending).
-  if (semver.valid(pending.version) && semver.valid(active.version)) {
-    if (!semver.gt(pending.version, active.version)) {
-      await clearPendingMetadata(featureId);
-      return null;
-    }
-  }
-
   return pending;
 }
 
@@ -309,6 +328,8 @@ export async function applyPendingFeature(
   if (!pending) {
     return null;
   }
+
+  clearOtaComponentCache(featureId);
 
   const active: CachedFeatureMetadata = {
     featureId: pending.featureId,

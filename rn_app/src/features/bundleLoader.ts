@@ -11,8 +11,10 @@ import {
 import { formatRemoteBundleError } from './bundleUpdater';
 import { getForceOtaInDev } from './remoteConfig';
 import {
+  clearOtaComponentCache,
   isFeatureLoaded,
   isFeatureLoadedFromOta,
+  shouldBustOtaComponentCache,
   stampOtaComponentCacheVersion,
   syncOtaRegistrationFromCache,
 } from './registerFeature';
@@ -80,6 +82,13 @@ async function loadFromNativeSplitBundle(
   const pathChanged =
     previousPath !== undefined && normalizeLocalPath(previousPath) !== path;
   const needsRegistration = !isFeatureLoadedFromOta(feature.id);
+
+  if (
+    activeMeta &&
+    shouldBustOtaComponentCache(feature.id, activeMeta.version, activeMeta.localPath)
+  ) {
+    clearOtaComponentCache(feature.id);
+  }
 
   const segmentId = feature.segmentId ?? getFeatureSegmentId(feature.id);
   if (__DEV__) {

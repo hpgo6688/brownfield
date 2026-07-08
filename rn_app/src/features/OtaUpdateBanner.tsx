@@ -30,11 +30,11 @@ export default function OtaUpdateBanner({
   return (
     <View style={[styles.container, { bottom: Math.max(insets.bottom, 12) + 8 }]}>
       <View style={styles.textBlock}>
-        <Text style={styles.title}>发现新版本 v{pendingUpdate.version}</Text>
+        <Text style={styles.title}>发现远程版本 v{pendingUpdate.version}</Text>
         <Text style={styles.subtitle}>
           {activeVersion
-            ? `当前 v${activeVersion} · 点击立即更新加载新版本`
-            : '新版本已下载 · 点击立即更新'}
+            ? `当前 v${activeVersion} · 点击立即更新切换至远程版本`
+            : '远程版本已下载 · 点击立即更新'}
           {downloading ? ' · 下载中…' : ''}
         </Text>
       </View>
