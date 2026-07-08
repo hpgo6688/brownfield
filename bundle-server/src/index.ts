@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
+import fs from 'fs';
 import path from 'path';
 import { config } from './config';
 import { ensureDistDir } from './services/bundle.service';
@@ -9,6 +10,9 @@ import { registerApiRoutes } from './routes/api';
 import { registerAdminRoutes } from './routes/admin';
 
 async function main() {
+  // SQLite path in .env is relative to prisma/schema.prisma → bundle-server/data/
+  fs.mkdirSync(path.join(process.cwd(), 'data'), { recursive: true });
+
   await ensureDistDir();
 
   const app = Fastify({ logger: true });

@@ -12,11 +12,11 @@ Scheme 2 dynamic bundle manifest server.
 
 ```bash
 npm install
-npm run db:push
-npm run db:seed
-npm run dev          # development
+npm run dev          # creates DB + seed, then starts with hot reload
 npm run build && npm start
 ```
+
+`npm run dev` runs `db:prepare` first (Prisma push + seed). Database file: `data/bundle-server.db`.
 
 ## URLs
 
