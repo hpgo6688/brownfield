@@ -57,3 +57,28 @@ export function isFeatureLoaded(featureId: string) {
 export function isFeatureLoadedFromOta(featureId: string) {
   return getFeatureSource(featureId) === 'ota';
 }
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+export async function waitForFeatureComponent(
+  featureId: string,
+  options?: { otaOnly?: boolean; timeoutMs?: number; intervalMs?: number },
+): Promise<ComponentType | null> {
+  const timeoutMs = options?.timeoutMs ?? 15000;
+  const intervalMs = options?.intervalMs ?? 50;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const component = getFeatureComponent(featureId, {
+      otaOnly: options?.otaOnly,
+    });
+    if (component) {
+      return component;
+    }
+    await sleep(intervalMs);
+  }
+
+  return null;
+}

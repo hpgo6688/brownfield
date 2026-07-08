@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import type { ComponentType } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  remoteFeatures,
+  type RemoteFeatureId,
+} from '../../screens/remote';
 import { checkAndUpdateFeature } from './bundleUpdater';
 import { loadFeatureBundle } from './bundleLoader';
 import { OtaModeToggle } from './OtaModeToggle';
@@ -9,12 +13,20 @@ import {
   allowsMainBundleFallback,
   useForceOtaInDev,
 } from './remoteConfig';
-import { getFeatureComponent } from './registerFeature';
+import { getFeatureComponent, waitForFeatureComponent } from './registerFeature';
 
 type FeatureHostProps = {
   featureId?: string;
   manifestUrl?: string;
 };
+
+function resolveMainFeatureComponent(featureId: string): ComponentType | null {
+  return (
+    getFeatureComponent(featureId, { otaOnly: false }) ??
+    remoteFeatures[featureId as RemoteFeatureId]?.component ??
+    null
+  );
+}
 
 export default function FeatureHost({
   featureId,
@@ -30,11 +42,25 @@ export default function FeatureHost({
     async function loadFeature() {
       if (!featureId) {
         setError('Missing featureId');
+        setScreen(null);
         return;
       }
 
       setError(null);
-      setScreen(null);
+
+      if (!forceOtaInDev) {
+        const mainComponent = resolveMainFeatureComponent(featureId);
+        if (mainComponent) {
+          if (!cancelled) {
+            setScreen(() => mainComponent);
+          }
+          return;
+        }
+      }
+
+      if (!cancelled) {
+        setScreen(null);
+      }
 
       const otaOnly = forceOtaInDev;
 
@@ -56,7 +82,7 @@ export default function FeatureHost({
               localPath: updateResult.bundlePath,
             });
           } catch (loadError) {
-            if (forceOtaInDev || !getFeatureComponent(featureId)) {
+            if (forceOtaInDev || !resolveMainFeatureComponent(featureId)) {
               throw loadError;
             }
           }
@@ -64,19 +90,35 @@ export default function FeatureHost({
           throw new Error(`OTA 模式：feature "${featureId}" 没有可加载的 bundle。`);
         }
 
-        const component = getFeatureComponent(featureId, { otaOnly });
-        if (!component) {
-          throw new Error(`Feature "${featureId}" is not available`);
+        const component =
+          updateResult.bundlePath
+            ? await waitForFeatureComponent(featureId, {
+                otaOnly: forceOtaInDev,
+              })
+            : null;
+
+        const resolvedComponent =
+          component ??
+          getFeatureComponent(featureId, { otaOnly }) ??
+          (!otaOnly ? resolveMainFeatureComponent(featureId) : null);
+
+        if (!resolvedComponent) {
+          throw new Error(
+            forceOtaInDev
+              ? `OTA 模式：feature "${featureId}" 的 bundle 已加载，但组件未注册。请确认 bundle 内调用了 registerFeature。`
+              : `Feature "${featureId}" is not available`,
+          );
         }
 
         if (!cancelled) {
-          setScreen(() => component);
+          setScreen(() => resolvedComponent);
         }
       } catch (loadError) {
         const fallback =
           allowsMainBundleFallback() && featureId
-            ? getFeatureComponent(featureId)
+            ? resolveMainFeatureComponent(featureId)
             : null;
+
         if (fallback && !cancelled) {
           setScreen(() => fallback);
           return;
@@ -86,6 +128,7 @@ export default function FeatureHost({
           const message =
             loadError instanceof Error ? loadError.message : 'Unknown load error';
           setError(message);
+          setScreen(null);
         }
       }
     }
@@ -97,40 +140,39 @@ export default function FeatureHost({
     };
   }, [featureId, manifestUrl, forceOtaInDev]);
 
-  if (error) {
-    return (
-      <SafeAreaProvider>
-        <View style={styles.center}>
-          <OtaModeToggle />
-          <Text style={styles.errorTitle}>页面加载失败</Text>
-          <Text style={styles.errorBody}>{error}</Text>
-        </View>
-      </SafeAreaProvider>
-    );
-  }
-
-  if (!Screen) {
-    return (
-      <SafeAreaProvider>
-        <View style={styles.center}>
-          <OtaModeToggle />
-          <ActivityIndicator size="large" />
-          <Text style={styles.loadingText}>加载中…</Text>
-        </View>
-      </SafeAreaProvider>
-    );
-  }
-
-  return <Screen />;
+  return (
+    <SafeAreaProvider>
+      <View style={styles.root}>
+        {error ? (
+          <View style={styles.center}>
+            <OtaModeToggle />
+            <Text style={styles.errorTitle}>页面加载失败</Text>
+            <Text style={styles.errorBody}>{error}</Text>
+          </View>
+        ) : !Screen ? (
+          <View style={styles.center}>
+            <OtaModeToggle />
+            <ActivityIndicator size="large" />
+            <Text style={styles.loadingText}>加载中…</Text>
+          </View>
+        ) : (
+          <Screen />
+        )}
+      </View>
+    </SafeAreaProvider>
+  );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: '#F2F2F7',
+  },
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
-    backgroundColor: '#F2F2F7',
   },
   loadingText: {
     marginTop: 12,

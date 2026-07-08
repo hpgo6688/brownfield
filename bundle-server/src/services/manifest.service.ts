@@ -1,6 +1,15 @@
 import semver from 'semver';
+import fs from 'fs';
+import path from 'path';
 import { config, getBaseUrl } from '../config';
 import { prisma } from '../lib/prisma';
+
+const featureSegments = JSON.parse(
+  fs.readFileSync(
+    path.join(__dirname, '../../../rn_app/config/feature-segments.json'),
+    'utf8',
+  ),
+) as Record<string, number>;
 
 export type ManifestFeature = {
   id: string;
@@ -11,6 +20,7 @@ export type ManifestFeature = {
   hash: string;
   bundleUrl: string;
   minAppVersion: string;
+  segmentId: number;
 };
 
 export type ManifestResponse = {
@@ -61,6 +71,11 @@ export async function buildManifest(params: {
     const version = row.activeRelease?.version ?? '0.0.0';
     const hash = row.activeRelease?.hash ?? 'sha256:unset';
 
+    const segmentId = featureSegments[row.id];
+    if (segmentId == null) {
+      throw new Error(`Missing segment id for feature "${row.id}" in feature-segments.json`);
+    }
+
     features.push({
       id: row.id,
       title: row.title,
@@ -70,6 +85,7 @@ export async function buildManifest(params: {
       hash,
       bundleUrl: buildBundleUrl(baseUrl, row),
       minAppVersion: row.minAppVersion,
+      segmentId,
     });
   }
 

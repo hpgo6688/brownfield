@@ -5,6 +5,7 @@ import {
 } from './bundleCache';
 import { getForceOtaInDev } from './remoteConfig';
 import { isFeatureLoaded, isFeatureLoadedFromOta } from './registerFeature';
+import { getFeatureSegmentId } from './segmentRegistry';
 import { isSplitBundleLoaderAvailable, SplitBundleLoader } from './splitBundleLoader';
 
 declare const global: {
@@ -40,7 +41,10 @@ function isLocalFileUrl(bundleUrl: string): boolean {
   return bundleUrl.startsWith('file://') || bundleUrl.startsWith('/');
 }
 
-async function loadFromNativeSplitBundle(localPath: string): Promise<void> {
+async function loadFromNativeSplitBundle(
+  feature: RemoteFeature,
+  localPath: string,
+): Promise<void> {
   if (!isSplitBundleLoaderAvailable()) {
     throw new Error(
       'SplitBundleLoader native module is unavailable. Rebuild BrownfieldLib after adding SplitBundleLoader.',
@@ -52,7 +56,8 @@ async function loadFromNativeSplitBundle(localPath: string): Promise<void> {
     throw new Error(`Cached bundle file not found: ${path}`);
   }
 
-  await SplitBundleLoader!.load(path);
+  const segmentId = feature.segmentId ?? getFeatureSegmentId(feature.id);
+  await SplitBundleLoader!.load(path, segmentId);
 }
 
 /**
@@ -76,6 +81,13 @@ export async function loadFeatureBundle(
     return;
   }
 
+  if (getForceOtaInDev() && (localPath || isLocalFileUrl(feature.bundleUrl))) {
+    const path = localPath ?? feature.bundleUrl;
+    await loadFromNativeSplitBundle(feature, path);
+    loadedBundleKeys.add(loadKey);
+    return;
+  }
+
   if (!getForceOtaInDev() && isMetroDevUrl(feature.bundleUrl)) {
     await loadFromMetroDevServer(feature.bundleUrl);
     loadedBundleKeys.add(loadKey);
@@ -84,7 +96,7 @@ export async function loadFeatureBundle(
 
   if (localPath || isLocalFileUrl(feature.bundleUrl)) {
     const path = localPath ?? feature.bundleUrl;
-    await loadFromNativeSplitBundle(path);
+    await loadFromNativeSplitBundle(feature, path);
     loadedBundleKeys.add(loadKey);
     return;
   }

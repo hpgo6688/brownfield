@@ -1,3 +1,5 @@
+import { getFeatureSegmentId, hasFeatureSegmentId } from './segmentRegistry';
+
 export type RemoteFeature = {
   id: string;
   title: string;
@@ -7,6 +9,8 @@ export type RemoteFeature = {
   version: string;
   hash: string;
   minAppVersion: string;
+  /** Metro split-bundle segment id — must match config/feature-segments.json */
+  segmentId?: number;
 };
 
 export type BundleManifest = {
@@ -20,6 +24,17 @@ export type BundleManifest = {
 export const DEFAULT_MANIFEST_URL = 'http://127.0.0.1:3001/api/manifest';
 
 let cachedManifest: BundleManifest | null = null;
+
+export function enrichRemoteFeature(feature: RemoteFeature): RemoteFeature {
+  if (feature.segmentId != null || !hasFeatureSegmentId(feature.id)) {
+    return feature;
+  }
+
+  return {
+    ...feature,
+    segmentId: getFeatureSegmentId(feature.id),
+  };
+}
 
 export async function fetchManifest(
   manifestUrl: string = DEFAULT_MANIFEST_URL,
@@ -36,8 +51,11 @@ export async function fetchManifest(
   }
 
   const manifest = (await response.json()) as BundleManifest;
-  cachedManifest = manifest;
-  return manifest;
+  cachedManifest = {
+    ...manifest,
+    features: manifest.features.map(enrichRemoteFeature),
+  };
+  return cachedManifest;
 }
 
 export async function fetchFeatureById(
@@ -51,7 +69,7 @@ export async function fetchFeatureById(
     throw new Error(`Feature "${featureId}" is disabled or missing in manifest`);
   }
 
-  return feature;
+  return enrichRemoteFeature(feature);
 }
 
 export function clearManifestCache() {

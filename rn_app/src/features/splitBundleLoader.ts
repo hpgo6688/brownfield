@@ -1,7 +1,7 @@
 import { NativeModules } from 'react-native';
 
 type SplitBundleLoaderModule = {
-  load: (fileUrl: string) => Promise<void>;
+  load: (fileUrl: string, segmentId: number) => Promise<void>;
 };
 
 export const SplitBundleLoader = NativeModules

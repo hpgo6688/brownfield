@@ -28,17 +28,23 @@ function sha256File(filePath) {
 
 const releaseVersion = readVersion();
 
+const featureSegments = JSON.parse(
+  fs.readFileSync(path.join(projectRoot, 'config/feature-segments.json'), 'utf8'),
+);
+
 const bundles = [
-  { name: 'main', featureId: null, entry: 'index.js', output: 'main.ios.jsbundle' },
+  { name: 'main', featureId: null, segmentId: null, entry: 'index.js', output: 'main.ios.jsbundle' },
   {
     name: 'order',
     featureId: 'order',
+    segmentId: featureSegments.order,
     entry: 'bundles/order/index.js',
     output: `order.${releaseVersion}.ios.jsbundle`,
   },
   {
     name: 'promo',
     featureId: 'promo',
+    segmentId: featureSegments.promo,
     entry: 'bundles/promo/index.js',
     output: `promo.${releaseVersion}.ios.jsbundle`,
   },
@@ -72,6 +78,7 @@ for (const bundle of bundles) {
   const hash = sha256File(outputPath);
   buildManifest.bundles.push({
     featureId: bundle.featureId,
+    segmentId: bundle.segmentId,
     name: bundle.name,
     version: bundle.featureId ? releaseVersion : null,
     file: bundle.output,
