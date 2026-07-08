@@ -31,11 +31,23 @@ struct ContentView: View {
                     }
                 }
 
-                Section("混合页面") {
+                Section("React Native") {
                     NavigationLink {
-                        ReactNativeScreenView()
+                        ReactNativeScreenView(moduleName: "HomeScreen", title: "首页")
                     } label: {
-                        Label("React Native", systemImage: "bolt.horizontal")
+                        Label("首页", systemImage: "house")
+                    }
+
+                    NavigationLink {
+                        ReactNativeScreenView(moduleName: "ProfileScreen", title: "个人中心")
+                    } label: {
+                        Label("个人中心", systemImage: "person")
+                    }
+
+                    NavigationLink {
+                        ReactNativeScreenView(moduleName: "SettingsScreen", title: "设置")
+                    } label: {
+                        Label("设置", systemImage: "gearshape")
                     }
                 }
             }
