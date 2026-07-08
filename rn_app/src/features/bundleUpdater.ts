@@ -34,6 +34,7 @@ import {
   type RemoteFeature,
 } from './manifest';
 import { clearOtaComponentCache } from './registerFeature';
+import { fetchWithRetry } from './retryWithBackoff';
 
 export type UpdateCheckResult = {
   featureId: string;
@@ -232,15 +233,17 @@ async function verifyAndPersistPending(
   return metadata;
 }
 
+async function downloadBundleBody(feature: RemoteFeature): Promise<string> {
+  const response = await fetchWithRetry(feature.bundleUrl, undefined, {
+    label: `bundle:${feature.id}`,
+  });
+  return response.text();
+}
+
 export async function downloadAndCacheFeature(
   feature: RemoteFeature,
 ): Promise<CachedFeatureMetadata> {
-  const response = await fetch(feature.bundleUrl);
-  if (!response.ok) {
-    throw new Error(`Download failed (${response.status}) for ${feature.id}`);
-  }
-
-  const body = await response.text();
+  const body = await downloadBundleBody(feature);
 
   try {
     return await verifyAndPersistActive(feature, body);
@@ -253,12 +256,7 @@ export async function downloadAndCacheFeature(
 export async function downloadPendingFeature(
   feature: RemoteFeature,
 ): Promise<PendingFeatureMetadata> {
-  const response = await fetch(feature.bundleUrl);
-  if (!response.ok) {
-    throw new Error(`Download failed (${response.status}) for ${feature.id}`);
-  }
-
-  const body = await response.text();
+  const body = await downloadBundleBody(feature);
 
   try {
     return await verifyAndPersistPending(feature, body);

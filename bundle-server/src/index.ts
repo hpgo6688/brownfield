@@ -8,6 +8,7 @@ import { config } from './config';
 import { ensureBundlesDir } from './services/bundle.service';
 import { registerApiRoutes } from './routes/api';
 import { registerAdminRoutes } from './routes/admin';
+import { registerBundleDeliveryHooks } from './routes/bundles';
 
 async function main() {
   // SQLite path in .env is relative to prisma/schema.prisma → bundle-server/data/
@@ -21,6 +22,8 @@ async function main() {
   await app.register(multipart, {
     limits: { fileSize: 50 * 1024 * 1024 },
   });
+
+  await registerBundleDeliveryHooks(app);
 
   await app.register(fastifyStatic, {
     root: config.bundlesDir,

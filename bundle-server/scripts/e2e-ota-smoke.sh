@@ -62,4 +62,24 @@ if [[ ! -s /tmp/e2e-downloaded.jsbundle ]]; then
 fi
 echo "OK: downloaded $(wc -c </tmp/e2e-downloaded.jsbundle) bytes"
 
+echo "→ Verify missing bundle returns 503 + Retry-After"
+MISSING_URL="${SERVER}/bundles/ota_missing.file.ios.jsbundle"
+HTTP_CODE=$(curl -s -o /tmp/e2e-missing-body.json -w "%{http_code}" -D /tmp/e2e-missing-headers.txt "${MISSING_URL}")
+RETRY_AFTER=$(grep -i '^retry-after:' /tmp/e2e-missing-headers.txt | awk '{print $2}' | tr -d '\r')
+if [[ "${HTTP_CODE}" != "503" ]]; then
+  echo "Expected HTTP 503 for missing bundle, got ${HTTP_CODE}" >&2
+  exit 1
+fi
+if [[ -z "${RETRY_AFTER}" ]]; then
+  echo "Expected Retry-After header on 503 response" >&2
+  exit 1
+fi
+node -e "
+const body = JSON.parse(require('fs').readFileSync('/tmp/e2e-missing-body.json', 'utf8'));
+if (body.error !== 'bundle_file_missing' || body.retryable !== true) {
+  throw new Error('unexpected 503 body: ' + JSON.stringify(body));
+}
+console.log('OK: missing bundle 503 retryable Retry-After=${RETRY_AFTER}s');
+"
+
 echo "E2E smoke passed."

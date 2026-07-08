@@ -344,6 +344,7 @@ cd ../bundle-server && npm run smoke:e2e
 | Dev Metro split | ✅ 已有 | `modulesOnly=true` |
 | 客户端缓存 | ✅ 已有 | `bundleCache.ts` + RNFS；未链接时降级主 bundle |
 | bundle 丢失容错 | ✅ 已有 | 下载/加载失败 → `FeatureHost` 错误页，不闪退 |
+| 下载指数退避 | ✅ 已有 | `retryWithBackoff.ts` — 最多 10 次，408/429/5xx 重试，404 不重试 |
 | 版本比对 / 下载 | ✅ 已有 | `bundleUpdater.ts`（staged: check / pending / apply） |
 | OTA polling + 用户确认更新 | ✅ 已有 | `otaUpdatePoller.ts` + `OtaUpdateBanner`（20s） |
 | Release split load | ✅ 已有 | `SplitBundleLoader`（需重打 BrownfieldLib） |
@@ -379,6 +380,21 @@ cd ../bundle-server && npm run smoke:e2e
 5. 用户点击 **立即更新** → `applyPendingFeature` 提升 pending → active → `FeatureHost` reload → 显示 v0.0.3
 
 **冷启动**（无缓存）：仍走 `ensureFeatureCached` / `checkAndUpdateFeature` 立即下载加载，无需用户确认。
+
+### 下载重试策略（指数退避）
+
+manifest 拉取与 bundle 下载共用 `fetchWithRetry`（`retryWithBackoff.ts`）：
+
+| 项 | 策略 |
+|----|------|
+| 最大次数 | **10 次** |
+| 退避 | `500ms × 2^(n-1)`，上限 30s，±20% jitter |
+| 可重试 | 网络错误、408、429、5xx（含服务端 503） |
+| 不重试 | 404、400、401、403；hash 不匹配；bundle 内容校验失败 |
+| 服务端 | 磁盘文件缺失 → manifest `hash: sha256:unset`；`GET /bundles/*` 返回 **503** + `Retry-After: 5` |
+| 失败后 | 仍走原有容错：有效本地 cache 继续用；无 cache → `FeatureHost` 错误页（含服务端/本地版本） |
+
+DEV 下 poll 调试条在重试耗尽后会显示 `retries: n/10`。
 
 **Metro 模式**：不 polling、不显示 Banner；`screens/remote/` HMR 不变。
 

@@ -2,6 +2,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import OtaUpdateBanner from './OtaUpdateBanner';
 import { formatVersionLabel, useFeatureHost } from './useFeatureHost';
+import { OTA_RETRY_MAX_ATTEMPTS } from './retryWithBackoff';
 
 type FeatureHostProps = {
   featureId?: string;
@@ -75,6 +76,9 @@ export default function FeatureHost({
                   {featureId} · active v{poll.activeVersion ?? '?'} · remote v
                   {poll.remoteVersion ?? '?'}
                   {poll.downloading ? ' · 下载中' : ''}
+                  {poll.retryAttempts != null
+                    ? ` · retries ${poll.retryAttempts}/${OTA_RETRY_MAX_ATTEMPTS}`
+                    : ''}
                   {poll.error ? ` · ${poll.error}` : ''}
                 </Text>
                 <Text style={styles.devPollHint}>

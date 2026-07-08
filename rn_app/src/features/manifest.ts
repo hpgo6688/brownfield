@@ -1,4 +1,5 @@
 import { getFeatureSegmentId, hasFeatureSegmentId } from './segmentRegistry';
+import { fetchWithRetry } from './retryWithBackoff';
 
 export type RemoteFeature = {
   id: string;
@@ -48,15 +49,16 @@ export async function fetchManifest(
     url.searchParams.set('_ts', String(Date.now()));
   }
 
-  const response = await fetch(url.toString(), {
-    headers: {
-      'Cache-Control': 'no-cache',
-      Pragma: 'no-cache',
+  const response = await fetchWithRetry(
+    url.toString(),
+    {
+      headers: {
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
     },
-  });
-  if (!response.ok) {
-    throw new Error(`Manifest request failed (${response.status})`);
-  }
+    { label: 'manifest' },
+  );
 
   const manifest = (await response.json()) as BundleManifest;
   cachedManifest = {

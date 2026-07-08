@@ -7,6 +7,8 @@ export const config = {
   useMetroBundles: process.env.USE_METRO_BUNDLES === 'true',
   bundlesDir: path.join(process.cwd(), 'data', 'bundles'),
   manifestVersion: 2,
+  /** Seconds for Retry-After when a /bundles/* file is missing on disk. */
+  bundleRetryAfterSeconds: Number(process.env.BUNDLE_RETRY_AFTER_SECONDS ?? 5),
 };
 
 export function getBaseUrl(protocol: string, host: string) {

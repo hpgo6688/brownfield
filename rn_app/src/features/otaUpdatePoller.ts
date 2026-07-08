@@ -11,6 +11,7 @@ import {
   matchesRemoteRelease,
 } from './bundleUpdater';
 import { bumpOtaBundleRevision, getForceOtaInDev, OTA_POLL_INTERVAL_MS } from './remoteConfig';
+import { FetchRetryError, OTA_RETRY_MAX_ATTEMPTS } from './retryWithBackoff';
 
 export type OtaPollState = {
   pendingUpdate: PendingFeatureMetadata | null;
@@ -19,6 +20,7 @@ export type OtaPollState = {
   downloading: boolean;
   applying: boolean;
   error: string | null;
+  retryAttempts: number | null;
   lastCheckedAt: string | null;
 };
 
@@ -41,6 +43,7 @@ export function useOtaUpdatePoller({
   const [downloading, setDownloading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryAttempts, setRetryAttempts] = useState<number | null>(null);
   const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
 
   const inFlightRef = useRef(false);
@@ -59,6 +62,7 @@ export function useOtaUpdatePoller({
 
     inFlightRef.current = true;
     setError(null);
+    setRetryAttempts(null);
 
     try {
       const check = await checkRemoteFeature(featureId, { manifestUrl });
@@ -95,8 +99,14 @@ export function useOtaUpdatePoller({
         console.log(`[OTA poll] ${featureId} pending download ready v${pending.version}`);
       }
     } catch (pollError) {
-      const message =
+      let message =
         pollError instanceof Error ? pollError.message : 'OTA poll failed';
+      if (pollError instanceof FetchRetryError) {
+        setRetryAttempts(pollError.attempts);
+        message = `${message} (retries: ${pollError.attempts}/${OTA_RETRY_MAX_ATTEMPTS})`;
+      } else {
+        setRetryAttempts(null);
+      }
       setError(message);
       if (__DEV__) {
         console.warn(`[OTA poll] ${featureId} failed:`, message);
@@ -181,6 +191,7 @@ export function useOtaUpdatePoller({
     if (!enabled) {
       setPendingUpdate(null);
       setError(null);
+      setRetryAttempts(null);
       return;
     }
   }, [enabled]);
@@ -200,6 +211,7 @@ export function useOtaUpdatePoller({
     downloading,
     applying,
     error,
+    retryAttempts,
     lastCheckedAt,
     pollNow,
     applyUpdate,

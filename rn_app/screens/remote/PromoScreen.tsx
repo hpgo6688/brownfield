@@ -85,9 +85,9 @@ export default function PromoScreen() {
         <RemoteHero
           badge="Metro · 本地开发"
           badgeColor="#16A34A"
-          heroBackground="#F0FDF4"
+          heroBackground="#F0FD00"
           title="活动"
-          subtitle="v0.0.5 · Metro 本地 — 活动页 HMR 测试，无需 upload"
+          subtitle="v0.0.4 · Metro 本地 — 活动页 HMR 测试，无需 upload"
         />
 
         <View style={styles.card}>

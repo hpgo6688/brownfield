@@ -1,5 +1,6 @@
 import semver from 'semver';
 import fs from 'fs';
+import fsPromises from 'fs/promises';
 import path from 'path';
 import { config, getBaseUrl } from '../config';
 import { prisma } from '../lib/prisma';
@@ -69,7 +70,19 @@ export async function buildManifest(params: {
     }
 
     const version = row.activeRelease?.version ?? '0.0.0';
-    const hash = row.activeRelease?.hash ?? 'sha256:unset';
+    let hash = row.activeRelease?.hash ?? 'sha256:unset';
+
+    if (!config.useMetroBundles && row.activeRelease?.filename) {
+      const bundleFilePath = path.join(config.bundlesDir, row.activeRelease.filename);
+      try {
+        await fsPromises.access(bundleFilePath);
+      } catch {
+        console.warn(
+          `[manifest] bundle file missing for feature="${row.id}" filename="${row.activeRelease.filename}"`,
+        );
+        hash = 'sha256:unset';
+      }
+    }
 
     const segmentId = featureSegments[row.id];
     if (segmentId == null) {

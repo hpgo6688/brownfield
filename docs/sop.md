@@ -354,6 +354,9 @@ cd rn_app && npm install && npm start
 | manifest 拉不到 | server 未启 / IP 不对 | 启动 server；真机改局域网 IP |
 | split load 崩溃 | eval 完整 bundle | 必须用 `ota_*.ios.jsbundle` + SplitBundleLoader |
 | smoke 失败 | server 未运行 | 先 `cd bundle-server && npm run dev` |
+| OTA 503 后恢复 | 服务端 bundle 文件短暂缺失 / 重启 | 客户端自动退避重试（最多 10 次）；manifest 暂为 `sha256:unset`；恢复 upload 或还原 `data/bundles/` 后重进页 |
+| OTA 404 不重试 | release 已从 DB/磁盘删除 | 立即失败；有本地 cache 则继续用；无 cache → 错误页提示 re-upload |
+| manifest hash unset | DB 有 release 但磁盘无文件 | Admin 重新 upload 或检查 `data/bundles/`；勿与 503  transient 混淆 |
 
 详细修复记录：[docs/fixes/](./fixes/)
 
