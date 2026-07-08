@@ -8,6 +8,8 @@
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest",
+    "build:bundles": "node scripts/build-bundles.js",
+    "build:bundles:dev": "node scripts/build-bundles.js --dev",
     "brownfield:package:ios": "brownfield package:ios --configuration Release --add-spm-package",
     "brownfield:package:ios:debug": "brownfield package:ios --configuration Debug --add-spm-package"
   },
