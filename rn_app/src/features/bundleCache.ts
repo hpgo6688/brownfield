@@ -8,6 +8,15 @@ export type CachedFeatureMetadata = {
   installedAt: string;
 };
 
+/** Downloaded but not yet applied — sibling pending.json per feature. */
+export type PendingFeatureMetadata = {
+  featureId: string;
+  version: string;
+  hash: string;
+  localPath: string;
+  downloadedAt: string;
+};
+
 type RNFSModule = {
   DocumentDirectoryPath: string;
   mkdir: (path: string) => Promise<void>;
@@ -104,6 +113,10 @@ function metadataPath(featureId: string) {
   return `${featureDir(featureId)}/metadata.json`;
 }
 
+function pendingMetadataPath(featureId: string) {
+  return `${featureDir(featureId)}/pending.json`;
+}
+
 function bundlePath(featureId: string, version: string) {
   return `${featureDir(featureId)}/${version}.jsbundle`;
 }
@@ -172,6 +185,49 @@ export async function writeCachedMetadata(metadata: CachedFeatureMetadata) {
 
   await ensureFeatureDir(metadata.featureId);
   await RNFS.writeFile(metadataPath(metadata.featureId), JSON.stringify(metadata), 'utf8');
+}
+
+export async function readPendingMetadata(
+  featureId: string,
+): Promise<PendingFeatureMetadata | null> {
+  const RNFS = getRNFS();
+  if (!RNFS) {
+    return null;
+  }
+
+  const path = pendingMetadataPath(featureId);
+  if (!(await RNFS.exists(path))) {
+    return null;
+  }
+
+  const raw = await RNFS.readFile(path, 'utf8');
+  return JSON.parse(raw) as PendingFeatureMetadata;
+}
+
+export async function writePendingMetadata(metadata: PendingFeatureMetadata) {
+  const RNFS = getRNFS();
+  if (!RNFS) {
+    throw new Error('Bundle cache unavailable (RNFS native module missing)');
+  }
+
+  await ensureFeatureDir(metadata.featureId);
+  await RNFS.writeFile(
+    pendingMetadataPath(metadata.featureId),
+    JSON.stringify(metadata),
+    'utf8',
+  );
+}
+
+export async function clearPendingMetadata(featureId: string) {
+  const RNFS = getRNFS();
+  if (!RNFS) {
+    return;
+  }
+
+  const path = pendingMetadataPath(featureId);
+  if (await RNFS.exists(path)) {
+    await RNFS.unlink(path);
+  }
 }
 
 export async function writeCachedBundle(

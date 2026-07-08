@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { ComponentType } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { checkAndUpdateFeature } from './bundleUpdater';
+import { ensureFeatureCached } from './bundleUpdater';
 import { isBundleCacheAvailable } from './bundleCache';
 import {
   clearLoadedBundlesForFeature,
   loadFeatureBundle,
 } from './bundleLoader';
 import { getPersistedDevOtaMode } from './devOtaModeStore';
+import OtaUpdateBanner from './OtaUpdateBanner';
+import { useOtaUpdatePoller } from './otaUpdatePoller';
 import {
   getForceOtaInDev,
   setForceOtaInDev,
@@ -49,6 +51,14 @@ export default function FeatureHost({
   const otaBundleRevision = useOtaBundleRevision();
   const [Screen, setScreen] = useState<ComponentType | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [otaModeActive, setOtaModeActive] = useState(false);
+  const [screenReady, setScreenReady] = useState(false);
+
+  const pollState = useOtaUpdatePoller({
+    featureId: featureId ?? '',
+    manifestUrl,
+    enabled: otaModeActive && Boolean(featureId) && screenReady,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -57,16 +67,21 @@ export default function FeatureHost({
       if (!featureId) {
         setError('Missing featureId');
         setScreen(null);
+        setScreenReady(false);
+        setOtaModeActive(false);
         return;
       }
 
       setError(null);
       setScreen(null);
+      setScreenReady(false);
 
       clearFeatureRegistration(featureId);
       clearLoadedBundlesForFeature(featureId);
 
       const useOta = await resolveUseOtaMode(devOtaMode);
+      setOtaModeActive(useOta);
+
       if (getForceOtaInDev() !== useOta) {
         setForceOtaInDev(useOta);
       }
@@ -77,6 +92,7 @@ export default function FeatureHost({
           const component = await loadMetroDevFeature(featureId);
           if (!cancelled) {
             setScreen(() => component);
+            setScreenReady(true);
           }
         } catch (metroError) {
           if (!cancelled) {
@@ -84,6 +100,7 @@ export default function FeatureHost({
               metroError instanceof Error ? metroError.message : 'Unknown load error';
             setError(message);
             setScreen(null);
+            setScreenReady(false);
           }
         }
         return;
@@ -96,14 +113,14 @@ export default function FeatureHost({
           );
         }
 
-        const updateResult = await checkAndUpdateFeature(featureId, {
+        const updateResult = await ensureFeatureCached(featureId, {
           manifestUrl,
         });
 
         if (!updateResult.bundlePath) {
           throw new Error(
             updateResult.error ??
-              'OTA 模式：无可用 bundle。请确认 bundle-server 已启动、已 upload ota_* bundle，并在活动页点「检查 Remote 更新」。',
+              'OTA 模式：无可用 bundle。请确认 bundle-server 已启动、已 upload ota_* bundle。',
           );
         }
 
@@ -135,6 +152,7 @@ export default function FeatureHost({
 
         if (!cancelled) {
           setScreen(() => component);
+          setScreenReady(true);
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -142,6 +160,7 @@ export default function FeatureHost({
             loadError instanceof Error ? loadError.message : 'Unknown load error';
           setError(message);
           setScreen(null);
+          setScreenReady(false);
         }
       }
     }
@@ -152,6 +171,15 @@ export default function FeatureHost({
       cancelled = true;
     };
   }, [featureId, manifestUrl, devOtaMode, otaBundleRevision]);
+
+  const showBanner =
+    otaModeActive &&
+    screenReady &&
+    pollState.pendingUpdate !== null &&
+    !pollState.dismissed;
+
+  const showDevPollStatus =
+    __DEV__ && otaModeActive && screenReady && !showBanner && !error;
 
   return (
     <SafeAreaProvider>
@@ -169,6 +197,36 @@ export default function FeatureHost({
         ) : (
           <View style={styles.screen}>
             <Screen />
+            {showBanner ? (
+              <OtaUpdateBanner
+                pendingUpdate={pollState.pendingUpdate!}
+                activeVersion={pollState.activeVersion}
+                applying={pollState.applying}
+                downloading={pollState.downloading}
+                onApply={() => {
+                  pollState.applyUpdate().catch(() => {});
+                }}
+                onDismiss={pollState.dismissPrompt}
+              />
+            ) : null}
+            {showDevPollStatus ? (
+              <Pressable
+                style={styles.devPollStatus}
+                onPress={() => {
+                  pollState.pollNow().catch(() => {});
+                }}>
+                <Text style={styles.devPollText}>
+                  OTA poll · active v{pollState.activeVersion ?? '?'} · remote v
+                  {pollState.remoteVersion ?? '?'}
+                  {pollState.downloading ? ' · 下载中' : ''}
+                  {pollState.error ? ` · ${pollState.error}` : ''}
+                </Text>
+                <Text style={styles.devPollHint}>点此立即检查 · 每 20s 自动 poll</Text>
+              </Pressable>
+            ) : null}
+            {pollState.error && showBanner ? (
+              <Text style={styles.pollError}>{pollState.error}</Text>
+            ) : null}
           </View>
         )}
       </View>
@@ -205,5 +263,35 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  pollError: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 88,
+    fontSize: 12,
+    color: '#B91C1C',
+    textAlign: 'center',
+    zIndex: 9998,
+  },
+  devPollStatus: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 12,
+    zIndex: 9998,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+  },
+  devPollText: {
+    color: '#E2E8F0',
+    fontSize: 11,
+  },
+  devPollHint: {
+    marginTop: 2,
+    color: '#94A3B8',
+    fontSize: 10,
   },
 });

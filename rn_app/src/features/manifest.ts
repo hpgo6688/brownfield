@@ -38,14 +38,22 @@ export function enrichRemoteFeature(feature: RemoteFeature): RemoteFeature {
 
 export async function fetchManifest(
   manifestUrl: string = DEFAULT_MANIFEST_URL,
-  options?: { appVersion?: string },
+  options?: { appVersion?: string; forceRefresh?: boolean },
 ): Promise<BundleManifest> {
   const url = new URL(manifestUrl);
   if (options?.appVersion) {
     url.searchParams.set('appVersion', options.appVersion);
   }
+  if (options?.forceRefresh !== false) {
+    url.searchParams.set('_ts', String(Date.now()));
+  }
 
-  const response = await fetch(url.toString());
+  const response = await fetch(url.toString(), {
+    headers: {
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+    },
+  });
   if (!response.ok) {
     throw new Error(`Manifest request failed (${response.status})`);
   }
@@ -61,8 +69,12 @@ export async function fetchManifest(
 export async function fetchFeatureById(
   featureId: string,
   manifestUrl: string = DEFAULT_MANIFEST_URL,
+  options?: { forceRefresh?: boolean },
 ): Promise<RemoteFeature> {
-  const manifest = cachedManifest ?? (await fetchManifest(manifestUrl));
+  const manifest =
+    options?.forceRefresh === true || cachedManifest === null
+      ? await fetchManifest(manifestUrl, { forceRefresh: true })
+      : cachedManifest;
   const feature = manifest.features.find(item => item.id === featureId);
 
   if (!feature) {

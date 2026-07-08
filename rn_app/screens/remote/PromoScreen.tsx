@@ -7,10 +7,11 @@ import {
   View,
 } from 'react-native';
 import {
-  checkAndUpdateFeature,
+  checkRemoteFeature,
+  downloadPendingFeature,
   getCachedFeatureVersion,
+  getPendingUpdate,
 } from '../../src/features/bundleUpdater';
-import { applyRemoteFeatureUpdates } from '../../src/features/featureReload';
 import { getForceOtaInDev } from '../../src/features/remoteConfig';
 import { PromoList, RemoteHero } from './components';
 import { remoteFeatureIds } from './featureMeta';
@@ -32,20 +33,40 @@ export default function PromoScreen() {
     setUpdateMessage(null);
 
     try {
-      const featureIds = [...remoteFeatureIds];
-      const results = await Promise.all(
-        featureIds.map(featureId => checkAndUpdateFeature(featureId)),
-      );
+      const downloaded: string[] = [];
+      const alreadyPending: string[] = [];
 
-      const updated = results.filter(result => result.updated);
-      if (updated.length > 0) {
-        const ids = updated.map(item => item.featureId).join(', ');
-        applyRemoteFeatureUpdates(updated.map(item => item.featureId));
-        if (getForceOtaInDev()) {
-          setUpdateMessage(`已更新 ${ids}，正在重载…`);
-          return;
+      for (const featureId of remoteFeatureIds) {
+        const pending = await getPendingUpdate(featureId);
+        if (pending) {
+          alreadyPending.push(`${featureId}@${pending.version}`);
+          continue;
         }
-        setUpdateMessage(`已更新 ${ids}。切换到 OTA 模式后生效`);
+
+        const check = await checkRemoteFeature(featureId);
+        if (!check.updateAvailable) {
+          continue;
+        }
+
+        const result = await downloadPendingFeature(check.remoteFeature);
+        downloaded.push(`${featureId}@${result.version}`);
+      }
+
+      if (downloaded.length > 0) {
+        if (getForceOtaInDev()) {
+          setUpdateMessage(
+            `已下载 ${downloaded.join(', ')}。页面底部将提示「立即更新」`,
+          );
+        } else {
+          setUpdateMessage(
+            `已下载 ${downloaded.join(', ')}。切换到 OTA 模式后点「立即更新」生效`,
+          );
+        }
+        return;
+      }
+
+      if (alreadyPending.length > 0) {
+        setUpdateMessage(`待更新：${alreadyPending.join(', ')}。请在页面底部点「立即更新」`);
         return;
       }
 
@@ -66,7 +87,7 @@ export default function PromoScreen() {
           badgeColor="#16A34A"
           heroBackground="#F0FDF4"
           title="活动"
-          subtitle="v0.0.3 · Metro 本地 — 活动页 HMR 测试，无需 upload"
+          subtitle="v0.0.5 · Metro 本地 — 活动页 HMR 测试，无需 upload"
         />
 
         <View style={styles.card}>

@@ -343,7 +343,8 @@ cd ../bundle-server && npm run smoke:e2e
 | 原生 Remote 菜单 | ✅ 已有 | `BundleManifestService` |
 | Dev Metro split | ✅ 已有 | `modulesOnly=true` |
 | 客户端缓存 | ✅ 已有 | `bundleCache.ts` + RNFS；未链接时降级主 bundle |
-| 版本比对 / 下载 | ✅ 已有 | `bundleUpdater.ts` |
+| 版本比对 / 下载 | ✅ 已有 | `bundleUpdater.ts`（staged: check / pending / apply） |
+| OTA polling + 用户确认更新 | ✅ 已有 | `otaUpdatePoller.ts` + `OtaUpdateBanner`（20s） |
 | Release split load | ✅ 已有 | `SplitBundleLoader`（需重打 BrownfieldLib） |
 | 新建 Remote 入口 API | ✅ 已有 | `POST /api/features` + Admin 表单 |
 | Remote 页面 / seed | ✅ 已有 | `order` / `promo` |
@@ -362,24 +363,43 @@ cd ../bundle-server && npm run smoke:e2e
 | 触发位置 | 控制什么 | 实现 |
 |----------|----------|------|
 | 原生下拉刷新 | Remote **菜单**是否展示 | `BundleManifestService.load()` |
-| 进入 Remote 页 | **bundle 内容**是否最新 | `FeatureHost` → `checkAndUpdateFeature` |
-| Remote 页内按钮 | 手动检查更新 | `bundleUpdater` |
+| 进入 Remote 页（OTA） | **bootstrap** 加载已有 active 缓存 | `FeatureHost` → `ensureFeatureCached` |
+| OTA 页 polling（20s） | 检测新版本 → 后台下载 pending | `useOtaUpdatePoller` |
+| 页面底部 Banner | 用户点 **「立即更新」** 应用 pending | `applyPendingFeature` + reload |
+| Remote 页内按钮 | 手动检查（下载 pending，不 auto-reload） | `checkRemoteFeature` + `downloadPendingFeature` |
 | 静默预加载 | 后台下载其他 Remote bundle | `preloadFeatures([...])` |
 
-**原则：**
+**OTA 模式 in-session 升级流程：**
 
-1. **原生管「门」** — manifest 决定 Remote 入口是否出现在菜单
-2. **JS 管「内容」** — 版本比对、下载、split load 都在 JS 层
-3. **同一 Runtime** — 禁止 Release 下 `eval` 完整 bundle（会 duplicate React）
+1. 用户已在 OTA 模式查看 v0.0.2（active cache）
+2. 服务端 upload v0.0.3 → manifest 更新
+3. `useOtaUpdatePoller` 每 **20s** poll manifest，发现新版本后 **后台下载** 到 `pending.json`（不 reload）
+4. 页面底部出现 Banner：**「发现新版本 v0.0.3」** + **「立即更新」**
+5. 用户点击 **立即更新** → `applyPendingFeature` 提升 pending → active → `FeatureHost` reload → 显示 v0.0.3
+
+**冷启动**（无缓存）：仍走 `ensureFeatureCached` / `checkAndUpdateFeature` 立即下载加载，无需用户确认。
+
+**Metro 模式**：不 polling、不显示 Banner；`screens/remote/` HMR 不变。
 
 ```typescript
-import { checkAndUpdateFeature, preloadFeatures } from '../features/bundleUpdater';
+import {
+  checkRemoteFeature,
+  downloadPendingFeature,
+  applyPendingFeature,
+  ensureFeatureCached,
+} from '../features/bundleUpdater';
 
-// Remote 页内「检查更新」
-await checkAndUpdateFeature('order');
+// OTA bootstrap（有缓存则直接用，无缓存才下载）
+await ensureFeatureCached('order');
 
-// 静默预加载
-preloadFeatures(['order', 'promo']);
+// 手动检查（只下载 pending）
+const check = await checkRemoteFeature('order');
+if (check.updateAvailable) {
+  await downloadPendingFeature(check.remoteFeature);
+}
+
+// 用户确认后应用
+await applyPendingFeature('order');
 ```
 
 ### 整体架构
@@ -399,14 +419,15 @@ flowchart TB
     end
 
     subgraph Mobile["移动端"]
-        H["触发：刷新菜单 / 进页 / RN 按钮"] --> I["GET /api/manifest"]
+        H["触发：刷新菜单 / 进页 / polling / RN 按钮"] --> I["GET /api/manifest"]
         I --> J{"version/hash 一致?"}
-        J -->|是| K["读沙盒缓存"]
-        J -->|否| L["下载 bundle"]
+        J -->|是| K["读沙盒 active 缓存"]
+        J -->|否| L["下载 bundle → pending.json"]
         L --> M{"sha256"}
-        M -->|通过| N["写沙盒"]
+        M -->|通过| N["写 pending，显示 Banner"]
         M -->|失败| O["fallback：内置 registerFeature"]
-        N --> P["SplitBundleLoader.load"]
+        N --> P2["用户点「立即更新」"]
+        P2 --> P["SplitBundleLoader.load active"]
         K --> P
         O --> P
         P --> Q["渲染 Remote 页面"]

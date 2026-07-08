@@ -71,3 +71,6 @@ export function useForceOtaInDev(): boolean {
     () => false,
   );
 }
+
+/** OTA manifest poll interval while FeatureHost is in OTA mode (ms). */
+export const OTA_POLL_INTERVAL_MS = 20_000;

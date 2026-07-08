@@ -12,7 +12,7 @@ export default function PromoScreen() {
           badgeColor="#059669"
           heroBackground="#ECFDF5"
           title="活动"
-          subtitle="v0.0.2 · OTA 远程 — 活动 bundle 已发布，检查更新后生效"
+          subtitle="v0.0.5 · OTA 远程 — 活动 polling 测试，Banner 点「立即更新」"
         />
         <View style={styles.card}>
           <PromoList tagColor="#059669" />

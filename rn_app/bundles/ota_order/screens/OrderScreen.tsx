@@ -12,7 +12,7 @@ export default function OrderScreen() {
           badgeColor="#059669"
           heroBackground="#ECFDF5"
           title="订单"
-          subtitle="v0.0.2 · OTA 远程 — 订单 bundle 已发布，检查更新后生效"
+          subtitle="v0.0.5 · OTA 远程 — 订单 polling 测试，Banner 点「立即更新」"
         />
         <OrderList statusColor="#059669" />
       </View>

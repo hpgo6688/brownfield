@@ -2,17 +2,23 @@ import semver from 'semver';
 import { sha256 } from 'js-sha256';
 import {
   cachedBundleFileExists,
+  clearPendingMetadata,
+  deleteCachedBundle,
   isBundleCacheAvailable,
   isCachedBundleUsable,
   normalizeLocalPath,
   pruneOldVersions,
   readCachedMetadata,
+  readPendingMetadata,
   writeCachedBundle,
   writeCachedMetadata,
+  writePendingMetadata,
   getCachedBundlePath,
   type CachedFeatureMetadata,
+  type PendingFeatureMetadata,
 } from './bundleCache';
 import {
+  clearManifestCache,
   DEFAULT_MANIFEST_URL,
   fetchFeatureById,
   fetchManifest,
@@ -28,6 +34,23 @@ export type UpdateCheckResult = {
   error?: string;
 };
 
+export type RemoteCheckResult = {
+  featureId: string;
+  remoteFeature: RemoteFeature;
+  updateAvailable: boolean;
+  activeVersion: string | null;
+  pendingVersion: string | null;
+};
+
+/**
+ * Staged OTA flow (polling / user apply):
+ * - `checkRemoteFeature` — manifest compare vs active cache only
+ * - `downloadPendingFeature` — download to sandbox + pending.json (no reload)
+ * - `applyPendingFeature` — promote pending → active metadata
+ *
+ * Bootstrap (first load, no usable cache):
+ * - `ensureFeatureCached` or `checkAndUpdateFeature` — download and activate immediately
+ */
 export function normalizeHash(hash: string): string {
   return hash.startsWith('sha256:') ? hash.slice('sha256:'.length) : hash;
 }
@@ -51,7 +74,7 @@ export function needsUpdate(
   return remote.version !== local.version;
 }
 
-async function verifyAndPersist(
+async function verifyAndPersistActive(
   feature: RemoteFeature,
   body: string,
 ): Promise<CachedFeatureMetadata> {
@@ -72,7 +95,32 @@ async function verifyAndPersist(
   };
 
   await writeCachedMetadata(metadata);
+  await clearPendingMetadata(feature.id);
   await pruneOldVersions(feature.id, feature.version);
+  return metadata;
+}
+
+async function verifyAndPersistPending(
+  feature: RemoteFeature,
+  body: string,
+): Promise<PendingFeatureMetadata> {
+  const digest = sha256(body);
+  const expected = normalizeHash(feature.hash);
+
+  if (expected !== 'unset' && digest !== expected) {
+    throw new Error(`Hash mismatch for feature "${feature.id}"`);
+  }
+
+  const localPath = await writeCachedBundle(feature.id, feature.version, body);
+  const metadata: PendingFeatureMetadata = {
+    featureId: feature.id,
+    version: feature.version,
+    hash: feature.hash,
+    localPath,
+    downloadedAt: new Date().toISOString(),
+  };
+
+  await writePendingMetadata(metadata);
   return metadata;
 }
 
@@ -87,11 +135,153 @@ export async function downloadAndCacheFeature(
   const body = await response.text();
 
   try {
-    return await verifyAndPersist(feature, body);
+    return await verifyAndPersistActive(feature, body);
   } catch (error) {
     await deleteCachedBundle(feature.id, feature.version);
     throw error;
   }
+}
+
+export async function downloadPendingFeature(
+  feature: RemoteFeature,
+): Promise<PendingFeatureMetadata> {
+  const response = await fetch(feature.bundleUrl);
+  if (!response.ok) {
+    throw new Error(`Download failed (${response.status}) for ${feature.id}`);
+  }
+
+  const body = await response.text();
+
+  try {
+    return await verifyAndPersistPending(feature, body);
+  } catch (error) {
+    await deleteCachedBundle(feature.id, feature.version);
+    throw error;
+  }
+}
+
+export async function checkRemoteFeature(
+  featureId: string,
+  options?: { manifestUrl?: string },
+): Promise<RemoteCheckResult> {
+  const manifestUrl = options?.manifestUrl ?? DEFAULT_MANIFEST_URL;
+  clearManifestCache();
+  await fetchManifest(manifestUrl, { forceRefresh: true });
+  const remoteFeature = await fetchFeatureById(featureId, manifestUrl, {
+    forceRefresh: true,
+  });
+  const active = await readCachedMetadata(featureId);
+  const pending = await readPendingMetadata(featureId);
+
+  const activeReady =
+    active !== null &&
+    (await cachedBundleFileExists(active.localPath)) &&
+    (await isCachedBundleUsable(active.localPath));
+
+  const updateAvailable =
+    remoteFeature.hash !== 'sha256:unset' &&
+    (!activeReady || needsUpdate(remoteFeature, active));
+
+  return {
+    featureId,
+    remoteFeature,
+    updateAvailable,
+    activeVersion: active?.version ?? null,
+    pendingVersion: pending?.version ?? null,
+  };
+}
+
+export async function getPendingUpdate(
+  featureId: string,
+): Promise<PendingFeatureMetadata | null> {
+  const pending = await readPendingMetadata(featureId);
+  if (!pending) {
+    return null;
+  }
+
+  if (!(await cachedBundleFileExists(pending.localPath))) {
+    await clearPendingMetadata(featureId);
+    return null;
+  }
+
+  if (!(await isCachedBundleUsable(pending.localPath))) {
+    return null;
+  }
+
+  const active = await readCachedMetadata(featureId);
+  if (!active) {
+    return pending;
+  }
+
+  if (
+    pending.version === active.version &&
+    normalizeHash(pending.hash) === normalizeHash(active.hash)
+  ) {
+    await clearPendingMetadata(featureId);
+    return null;
+  }
+
+  return pending;
+}
+
+export async function applyPendingFeature(
+  featureId: string,
+): Promise<CachedFeatureMetadata | null> {
+  const pending = await getPendingUpdate(featureId);
+  if (!pending) {
+    return null;
+  }
+
+  const active: CachedFeatureMetadata = {
+    featureId: pending.featureId,
+    version: pending.version,
+    hash: pending.hash,
+    localPath: pending.localPath,
+    installedAt: new Date().toISOString(),
+  };
+
+  await writeCachedMetadata(active);
+  await clearPendingMetadata(featureId);
+  await pruneOldVersions(featureId, pending.version);
+  return active;
+}
+
+/** Load existing active cache without checking remote — for in-session OTA bootstrap. */
+export async function ensureFeatureCached(
+  featureId: string,
+  options?: { manifestUrl?: string },
+): Promise<UpdateCheckResult> {
+  const manifestUrl = options?.manifestUrl ?? DEFAULT_MANIFEST_URL;
+
+  if (!isBundleCacheAvailable()) {
+    const feature = await fetchFeatureById(featureId, manifestUrl);
+    return {
+      featureId,
+      feature,
+      updated: false,
+      bundlePath: null,
+      cachedVersion: null,
+    };
+  }
+
+  const cached = await readCachedMetadata(featureId);
+  const cachedFileReady =
+    cached !== null &&
+    (await cachedBundleFileExists(cached.localPath)) &&
+    (await isCachedBundleUsable(cached.localPath));
+
+  if (cachedFileReady && cached) {
+    const feature = await fetchFeatureById(featureId, manifestUrl);
+    return {
+      featureId,
+      feature,
+      updated: false,
+      bundlePath: cached.localPath,
+      cachedVersion: cached.version,
+    };
+  }
+
+  return checkAndUpdateFeature(featureId, options);
 }
 
 export async function checkAndUpdateFeature(

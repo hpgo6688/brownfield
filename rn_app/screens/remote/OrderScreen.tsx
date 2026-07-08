@@ -11,7 +11,7 @@ export default function OrderScreen() {
           badgeColor="#EA580C"
           heroBackground="#FFF7ED"
           title="订单"
-          subtitle="v0.0.3 · Metro 本地 — 订单页 HMR 测试，无需 upload"
+          subtitle="v0.0.5 · Metro 本地 — 订单页 HMR 测试，无需 upload"
         />
         <OrderList statusColor="#EA580C" />
       </View>
