@@ -1,6 +1,27 @@
-import { PrismaClient } from '@prisma/client';
+import 'dotenv/config';
+import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3';
+import path from 'path';
+import { PrismaClient } from '../src/generated/prisma/client';
 
-const prisma = new PrismaClient();
+function getDatabaseUrl(): string {
+  const rawUrl = process.env.DATABASE_URL ?? 'file:../data/bundle-server.db';
+  if (!rawUrl.startsWith('file:')) {
+    return rawUrl;
+  }
+
+  const filePath = rawUrl.slice('file:'.length);
+  if (path.isAbsolute(filePath)) {
+    return rawUrl;
+  }
+
+  return `file:${path.resolve(process.cwd(), 'prisma', filePath)}`;
+}
+
+const adapter = new PrismaBetterSqlite3({
+  url: getDatabaseUrl(),
+});
+
+const prisma = new PrismaClient({ adapter });
 
 const remoteEntries = [
   {

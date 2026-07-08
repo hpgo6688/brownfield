@@ -1,8 +1,14 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import type { ComponentType } from 'react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { checkAndUpdateFeature } from './bundleUpdater';
 import { loadFeatureBundle } from './bundleLoader';
+import { OtaModeToggle } from './OtaModeToggle';
+import {
+  allowsMainBundleFallback,
+  useForceOtaInDev,
+} from './remoteConfig';
 import { getFeatureComponent } from './registerFeature';
 
 type FeatureHostProps = {
@@ -14,6 +20,7 @@ export default function FeatureHost({
   featureId,
   manifestUrl,
 }: FeatureHostProps) {
+  const forceOtaInDev = useForceOtaInDev();
   const [Screen, setScreen] = useState<ComponentType | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,10 +36,19 @@ export default function FeatureHost({
       setError(null);
       setScreen(null);
 
+      const otaOnly = forceOtaInDev;
+
       try {
         const updateResult = await checkAndUpdateFeature(featureId, {
           manifestUrl,
         });
+
+        if (forceOtaInDev && !updateResult.bundlePath) {
+          throw new Error(
+            updateResult.error ??
+              'OTA 模式：无缓存 bundle。请先上传到 bundle-server，再在活动页点「检查 Remote 更新」。',
+          );
+        }
 
         if (updateResult.bundlePath) {
           try {
@@ -40,13 +56,15 @@ export default function FeatureHost({
               localPath: updateResult.bundlePath,
             });
           } catch (loadError) {
-            if (!getFeatureComponent(featureId)) {
+            if (forceOtaInDev || !getFeatureComponent(featureId)) {
               throw loadError;
             }
           }
+        } else if (forceOtaInDev) {
+          throw new Error(`OTA 模式：feature "${featureId}" 没有可加载的 bundle。`);
         }
 
-        const component = getFeatureComponent(featureId);
+        const component = getFeatureComponent(featureId, { otaOnly });
         if (!component) {
           throw new Error(`Feature "${featureId}" is not available`);
         }
@@ -55,7 +73,10 @@ export default function FeatureHost({
           setScreen(() => component);
         }
       } catch (loadError) {
-        const fallback = featureId ? getFeatureComponent(featureId) : null;
+        const fallback =
+          allowsMainBundleFallback() && featureId
+            ? getFeatureComponent(featureId)
+            : null;
         if (fallback && !cancelled) {
           setScreen(() => fallback);
           return;
@@ -74,23 +95,29 @@ export default function FeatureHost({
     return () => {
       cancelled = true;
     };
-  }, [featureId, manifestUrl]);
+  }, [featureId, manifestUrl, forceOtaInDev]);
 
   if (error) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorTitle}>页面加载失败</Text>
-        <Text style={styles.errorBody}>{error}</Text>
-      </View>
+      <SafeAreaProvider>
+        <View style={styles.center}>
+          <OtaModeToggle />
+          <Text style={styles.errorTitle}>页面加载失败</Text>
+          <Text style={styles.errorBody}>{error}</Text>
+        </View>
+      </SafeAreaProvider>
     );
   }
 
   if (!Screen) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" />
-        <Text style={styles.loadingText}>加载中…</Text>
-      </View>
+      <SafeAreaProvider>
+        <View style={styles.center}>
+          <OtaModeToggle />
+          <ActivityIndicator size="large" />
+          <Text style={styles.loadingText}>加载中…</Text>
+        </View>
+      </SafeAreaProvider>
     );
   }
 

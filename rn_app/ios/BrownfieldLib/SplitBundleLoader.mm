@@ -5,6 +5,8 @@
 #import <React/RCTBridgeModule.h>
 #import <React/RCTBridgeProxy+Cxx.h>
 #import <React/RCTBridgeProxy.h>
+#import <React/RCTCallInvoker.h>
+#import <React/RCTCallInvokerModule.h>
 #import <React/RCTCxxUtils.h>
 #import <React/RCTLog.h>
 #import <React/RCTUtils.h>
@@ -24,7 +26,16 @@ using facebook::react::deriveSourceURL;
 - (void *)runtime;
 @end
 
-@implementation SplitBundleLoader
+@interface SplitBundleLoader () <RCTCallInvokerModule>
+@end
+
+@implementation SplitBundleLoader {
+  __weak RCTBridge *_bridge;
+  RCTCallInvoker *_callInvoker;
+}
+
+@synthesize bridge = _bridge;
+@synthesize callInvoker = _callInvoker;
 
 RCT_EXPORT_MODULE();
 
@@ -33,38 +44,91 @@ RCT_EXPORT_MODULE();
   return NO;
 }
 
+static RCTBridge *CurrentBridge(void)
+{
+  return [RCTBridge currentBridge];
+}
+
+static std::shared_ptr<facebook::react::CallInvoker> JSCallInvokerForModule(SplitBundleLoader *module, RCTBridge *bridge)
+{
+  if (module.callInvoker != nil) {
+    return module.callInvoker.callInvoker;
+  }
+
+  RCTBridge *batchedBridge = bridge.batchedBridge ?: bridge;
+  if ([batchedBridge isKindOfClass:[RCTBridgeProxy class]]) {
+    return ((RCTBridgeProxy *)batchedBridge).jsCallInvoker;
+  }
+
+  return nullptr;
+}
+
+static void *RuntimeForBridge(RCTBridge *bridge)
+{
+  RCTBridge *batchedBridge = bridge.batchedBridge ?: bridge;
+
+#ifndef RCT_REMOVE_LEGACY_ARCH
+  if ([batchedBridge isKindOfClass:[RCTCxxBridge class]]) {
+    return ((RCTCxxBridge *)batchedBridge).runtime;
+  }
+#endif
+
+  if ([batchedBridge isKindOfClass:[RCTBridgeProxy class]]) {
+    return [(RCTBridgeProxy *)batchedBridge runtime];
+  }
+
+  return nullptr;
+}
+
+static NSString *NormalizedFilePath(NSString *fileArgument)
+{
+  if ([fileArgument hasPrefix:@"file://"]) {
+    NSURL *fileURL = [NSURL URLWithString:fileArgument];
+    if (fileURL.path.length > 0) {
+      return fileURL.path;
+    }
+
+    return [fileArgument substringFromIndex:7];
+  }
+
+  return fileArgument;
+}
+
 RCT_EXPORT_METHOD(load
                   : (NSString *)fileUrl resolver
                   : (RCTPromiseResolveBlock)resolve rejecter
                   : (RCTPromiseRejectBlock)reject)
 {
-  NSURL *url = nil;
-  if ([fileUrl hasPrefix:@"/"]) {
-    url = [NSURL fileURLWithPath:fileUrl];
-  } else {
-    url = [NSURL URLWithString:fileUrl];
-  }
-
-  if (url == nil) {
-    reject(@"EINVAL", @"Invalid bundle URL", nil);
+  NSString *path = NormalizedFilePath(fileUrl);
+  if (path.length == 0) {
+    reject(@"EINVAL", @"Invalid bundle path", nil);
     return;
   }
 
-  NSData *data = [NSData dataWithContentsOfURL:url];
+  NSURL *url = [NSURL fileURLWithPath:path];
+  if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+    reject(@"ENOENT", [NSString stringWithFormat:@"Cannot read bundle at %@", path], nil);
+    return;
+  }
+
+  NSError *readError = nil;
+  NSData *data = [NSData dataWithContentsOfFile:path options:0 error:&readError];
   if (data == nil) {
-    reject(@"ENOENT", [NSString stringWithFormat:@"Cannot read bundle at %@", fileUrl], nil);
+    reject(
+        @"ENOENT",
+        [NSString stringWithFormat:@"Cannot read bundle at %@ (%@)", path, readError.localizedDescription ?: @"unknown"],
+        readError);
     return;
   }
 
-  RCTBridge *bridge = self.bridge;
+  RCTBridge *bridge = self.bridge ?: CurrentBridge();
   if (bridge == nil) {
     reject(@"NO_BRIDGE", @"React Native bridge is not ready", nil);
     return;
   }
 
-  RCTBridge *batchedBridge = bridge.batchedBridge ?: bridge;
-
 #ifndef RCT_REMOVE_LEGACY_ARCH
+  RCTBridge *batchedBridge = bridge.batchedBridge ?: bridge;
   if ([batchedBridge isKindOfClass:[RCTCxxBridge class]]) {
     RCTCxxBridge *cxxBridge = (RCTCxxBridge *)batchedBridge;
     if (!cxxBridge.valid) {
@@ -78,14 +142,13 @@ RCT_EXPORT_METHOD(load
   }
 #endif
 
-  RCTBridgeProxy *bridgeProxy = (RCTBridgeProxy *)batchedBridge;
-  void *runtimePtr = [bridgeProxy runtime];
+  void *runtimePtr = RuntimeForBridge(bridge);
   if (runtimePtr == nullptr) {
     reject(@"NO_RUNTIME", @"React Native runtime is not ready", nil);
     return;
   }
 
-  std::shared_ptr<facebook::react::CallInvoker> callInvoker = bridgeProxy.jsCallInvoker;
+  std::shared_ptr<facebook::react::CallInvoker> callInvoker = JSCallInvokerForModule(self, bridge);
   if (callInvoker == nullptr) {
     reject(@"NO_INVOKER", @"React Native JS call invoker is not ready", nil);
     return;

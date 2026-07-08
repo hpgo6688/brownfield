@@ -1,6 +1,10 @@
 import type { RemoteFeature } from './manifest';
-import { toFileUrl } from './bundleUpdater';
-import { isFeatureLoaded } from './registerFeature';
+import {
+  cachedBundleFileExists,
+  normalizeLocalPath,
+} from './bundleCache';
+import { getForceOtaInDev } from './remoteConfig';
+import { isFeatureLoaded, isFeatureLoadedFromOta } from './registerFeature';
 import { isSplitBundleLoaderAvailable, SplitBundleLoader } from './splitBundleLoader';
 
 declare const global: {
@@ -43,7 +47,12 @@ async function loadFromNativeSplitBundle(localPath: string): Promise<void> {
     );
   }
 
-  await SplitBundleLoader!.load(toFileUrl(localPath));
+  const path = normalizeLocalPath(localPath);
+  if (!(await cachedBundleFileExists(path))) {
+    throw new Error(`Cached bundle file not found: ${path}`);
+  }
+
+  await SplitBundleLoader!.load(path);
 }
 
 /**
@@ -59,11 +68,15 @@ export async function loadFeatureBundle(
     ? `${feature.id}:${localPath}`
     : `${feature.id}:${feature.bundleUrl}`;
 
-  if (isFeatureLoaded(feature.id) && loadedBundleKeys.has(loadKey)) {
+  const alreadyLoaded = getForceOtaInDev()
+    ? isFeatureLoadedFromOta(feature.id)
+    : isFeatureLoaded(feature.id);
+
+  if (alreadyLoaded && loadedBundleKeys.has(loadKey)) {
     return;
   }
 
-  if (isMetroDevUrl(feature.bundleUrl)) {
+  if (!getForceOtaInDev() && isMetroDevUrl(feature.bundleUrl)) {
     await loadFromMetroDevServer(feature.bundleUrl);
     loadedBundleKeys.add(loadKey);
     return;

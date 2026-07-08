@@ -20,9 +20,11 @@ AppRegistry.registerComponent('HomeScreen', () => HomeScreen);
 AppRegistry.registerComponent('ProfileScreen', () => ProfileScreen);
 AppRegistry.registerComponent('SettingsScreen', () => SettingsScreen);
 
-// Remote business block — fallback registry for offline / first launch
+// Remote business block — Metro fallback (ignored when in-app OTA mode is on)
 Object.entries(remoteFeatures).forEach(([featureId, feature]) => {
-  registerFeature(featureId, feature.moduleName, feature.component);
+  registerFeature(featureId, feature.moduleName, feature.component, {
+    source: 'main',
+  });
 });
 
 AppRegistry.registerComponent('FeatureHost', () => FeatureHost);

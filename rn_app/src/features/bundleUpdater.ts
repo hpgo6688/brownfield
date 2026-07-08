@@ -1,13 +1,15 @@
 import semver from 'semver';
 import { sha256 } from 'js-sha256';
 import {
+  cachedBundleFileExists,
   deleteCachedBundle,
-  getCachedBundlePath,
   isBundleCacheAvailable,
+  normalizeLocalPath,
   pruneOldVersions,
   readCachedMetadata,
   writeCachedBundle,
   writeCachedMetadata,
+  getCachedBundlePath,
   type CachedFeatureMetadata,
 } from './bundleCache';
 import {
@@ -113,10 +115,14 @@ export async function checkAndUpdateFeature(
     }
 
     const cached = await readCachedMetadata(featureId);
+    const cachedFileReady =
+      cached !== null && (await cachedBundleFileExists(cached.localPath));
     const shouldUpdate =
-      options?.force === true || needsUpdate(feature, cached);
+      options?.force === true ||
+      needsUpdate(feature, cached) ||
+      (cached !== null && !cachedFileReady);
 
-    if (!shouldUpdate && cached) {
+    if (!shouldUpdate && cached && cachedFileReady) {
       return {
         featureId,
         feature,
@@ -131,7 +137,7 @@ export async function checkAndUpdateFeature(
         featureId,
         feature,
         updated: false,
-        bundlePath: cached?.localPath ?? null,
+        bundlePath: cachedFileReady ? cached?.localPath ?? null : null,
         cachedVersion: cached?.version ?? null,
       };
     }
@@ -148,7 +154,7 @@ export async function checkAndUpdateFeature(
     const cached = await readCachedMetadata(featureId);
     const message = error instanceof Error ? error.message : 'Update failed';
 
-    if (cached) {
+    if (cached && (await cachedBundleFileExists(cached.localPath))) {
       return {
         featureId,
         feature: {
@@ -212,7 +218,7 @@ export async function getCachedFeatureVersion(featureId: string): Promise<string
 }
 
 export function toFileUrl(localPath: string): string {
-  return localPath.startsWith('file://') ? localPath : `file://${localPath}`;
+  return normalizeLocalPath(localPath);
 }
 
 export { getCachedBundlePath };

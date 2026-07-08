@@ -12,7 +12,8 @@ import BrownfieldLib
 struct ios_nativeApp: App {
     init() {
         ReactNativeBrownfield.shared.bundle = ReactNativeBundle
-        ReactNativeBrownfield.shared.preferEmbeddedBundleInDebug = false
+        // Prefer Metro when running; fall back to embedded main.jsbundle in Debug XCFramework.
+        ReactNativeBrownfield.shared.preferEmbeddedBundleInDebug = true
         ReactNativeBrownfield.shared.startReactNative {
             print("React Native bundle loaded")
         }

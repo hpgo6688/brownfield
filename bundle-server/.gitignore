@@ -2,6 +2,7 @@ dist/
 node_modules/
 data/
 prisma/data/
+src/generated/
 *.db
 *.db-journal
 .env.local

@@ -59,6 +59,43 @@ function cacheRoot() {
   return `${RNFS.DocumentDirectoryPath}/rn-bundles`;
 }
 
+export function normalizeLocalPath(localPath: string): string {
+  if (localPath.startsWith('file://')) {
+    try {
+      return decodeURIComponent(localPath.replace(/^file:\/\//, ''));
+    } catch {
+      return localPath.replace(/^file:\/\//, '');
+    }
+  }
+
+  return localPath;
+}
+
+async function ensureCacheRoot() {
+  const RNFS = getRNFS();
+  if (!RNFS) {
+    return;
+  }
+
+  const root = cacheRoot();
+  if (!(await RNFS.exists(root))) {
+    await RNFS.mkdir(root);
+  }
+}
+
+async function ensureFeatureDir(featureId: string) {
+  const RNFS = getRNFS();
+  if (!RNFS) {
+    return;
+  }
+
+  await ensureCacheRoot();
+  const dir = featureDir(featureId);
+  if (!(await RNFS.exists(dir))) {
+    await RNFS.mkdir(dir);
+  }
+}
+
 function featureDir(featureId: string) {
   return `${cacheRoot()}/${featureId}`;
 }
@@ -71,10 +108,18 @@ function bundlePath(featureId: string, version: string) {
   return `${featureDir(featureId)}/${version}.jsbundle`;
 }
 
-async function ensureFeatureDir(featureId: string) {
+export async function cachedBundleFileExists(localPath: string): Promise<boolean> {
   const RNFS = getRNFS();
-  if (!RNFS) return;
-  await RNFS.mkdir(featureDir(featureId));
+  if (!RNFS) {
+    return false;
+  }
+
+  const path = normalizeLocalPath(localPath);
+  if (!path) {
+    return false;
+  }
+
+  return RNFS.exists(path);
 }
 
 export async function readCachedMetadata(
