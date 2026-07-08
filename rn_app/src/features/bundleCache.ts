@@ -15,6 +15,8 @@ export type PendingFeatureMetadata = {
   hash: string;
   localPath: string;
   downloadedAt: string;
+  /** User tapped 稍后 — apply automatically on next page entry. */
+  deferredApply?: boolean;
 };
 
 type RNFSModule = {
@@ -261,6 +263,18 @@ export async function writePendingMetadata(metadata: PendingFeatureMetadata) {
   );
 }
 
+export async function markPendingDeferredApply(featureId: string): Promise<void> {
+  const pending = await readPendingMetadata(featureId);
+  if (!pending) {
+    return;
+  }
+
+  await writePendingMetadata({
+    ...pending,
+    deferredApply: true,
+  });
+}
+
 export async function clearPendingMetadata(featureId: string) {
   const RNFS = getRNFS();
   if (!RNFS) {
@@ -355,6 +369,34 @@ export async function clearUnusableActiveMetadata(featureId: string): Promise<bo
   }
 
   return cleared;
+}
+
+/** Self-heal active metadata when bundle files are missing or paths drift. */
+export async function reconcileActiveBundleCache(featureId: string): Promise<boolean> {
+  let changed = await clearStaleActiveMetadata(featureId);
+  changed = (await clearUnusableActiveMetadata(featureId)) || changed;
+
+  const active = await readCachedMetadata(featureId);
+  if (!active) {
+    return changed;
+  }
+
+  const canonicalPath = getCachedBundlePath(featureId, active.version);
+  if (normalizeLocalPath(active.localPath) === normalizeLocalPath(canonicalPath)) {
+    return changed;
+  }
+
+  if (await cachedBundleFileExists(active.localPath)) {
+    return changed;
+  }
+
+  if (await cachedBundleFileExists(canonicalPath)) {
+    await writeCachedMetadata({ ...active, localPath: canonicalPath });
+    return true;
+  }
+
+  await clearActiveMetadata(featureId);
+  return true;
 }
 
 export async function writePendingBundle(

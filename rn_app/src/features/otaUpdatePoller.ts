@@ -7,6 +7,7 @@ import {
   checkRemoteFeature,
   downloadPendingFeature,
   getPendingUpdate,
+  markPendingDeferredApply,
   matchesRemoteRelease,
 } from './bundleUpdater';
 import { bumpOtaBundleRevision, getForceOtaInDev, OTA_POLL_INTERVAL_MS } from './remoteConfig';
@@ -17,7 +18,6 @@ export type OtaPollState = {
   remoteVersion: string | null;
   downloading: boolean;
   applying: boolean;
-  dismissed: boolean;
   error: string | null;
   lastCheckedAt: string | null;
 };
@@ -40,13 +40,11 @@ export function useOtaUpdatePoller({
   const [remoteVersion, setRemoteVersion] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [applying, setApplying] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
 
   const inFlightRef = useRef(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
-  const dismissedForVersionRef = useRef<string | null>(null);
 
   const refreshPending = useCallback(async () => {
     const pending = await getPendingUpdate(featureId);
@@ -78,7 +76,6 @@ export function useOtaUpdatePoller({
       if (existingPending) {
         if (matchesRemoteRelease(existingPending, check.remoteFeature)) {
           setPendingUpdate(existingPending);
-          setDismissed(dismissedForVersionRef.current === existingPending.version);
           return;
         }
 
@@ -87,15 +84,12 @@ export function useOtaUpdatePoller({
 
       if (!check.updateAvailable || check.remoteFeature.hash === 'sha256:unset') {
         setPendingUpdate(null);
-        dismissedForVersionRef.current = null;
         return;
       }
 
       setDownloading(true);
       const pending = await downloadPendingFeature(check.remoteFeature);
       setPendingUpdate(pending);
-      dismissedForVersionRef.current = null;
-      setDismissed(false);
 
       if (__DEV__) {
         console.log(`[OTA poll] ${featureId} pending download ready v${pending.version}`);
@@ -117,10 +111,13 @@ export function useOtaUpdatePoller({
     await runPollCycle();
   }, [runPollCycle]);
 
-  const dismissPrompt = useCallback(() => {
-    setDismissed(true);
-    dismissedForVersionRef.current = pendingUpdate?.version ?? null;
-  }, [pendingUpdate?.version]);
+  const dismissPrompt = useCallback(async () => {
+    await markPendingDeferredApply(featureId);
+    const pending = await refreshPending();
+    if (pending) {
+      setPendingUpdate({ ...pending, deferredApply: true });
+    }
+  }, [featureId, refreshPending]);
 
   const applyUpdate = useCallback(async () => {
     if (applying) {
@@ -139,8 +136,6 @@ export function useOtaUpdatePoller({
 
       setPendingUpdate(null);
       setActiveVersion(active.version);
-      dismissedForVersionRef.current = null;
-      setDismissed(false);
 
       if (__DEV__ && getForceOtaInDev()) {
         DevSettings.reload();
@@ -204,7 +199,6 @@ export function useOtaUpdatePoller({
     remoteVersion,
     downloading,
     applying,
-    dismissed,
     error,
     lastCheckedAt,
     pollNow,

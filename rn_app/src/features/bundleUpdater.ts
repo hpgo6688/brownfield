@@ -4,6 +4,7 @@ import {
   cachedBundleFileExists,
   clearPendingMetadata,
   clearStaleActiveMetadata,
+  clearStalePendingRelease,
   clearUnusableActiveMetadata,
   deleteCachedBundle,
   deletePendingBundleByPath,
@@ -13,6 +14,8 @@ import {
   pruneOldVersions,
   readCachedMetadata,
   readPendingMetadata,
+  markPendingDeferredApply,
+  reconcileActiveBundleCache,
   validateOtaBundleContent,
   writeCachedBundle,
   writeCachedMetadata,
@@ -39,6 +42,8 @@ export type UpdateCheckResult = {
   bundlePath: string | null;
   cachedVersion: string | null;
   error?: string;
+  /** Deferred pending was applied — JS runtime must reload before loading the page. */
+  runtimeReloadRequired?: boolean;
 };
 
 function fallbackFeature(featureId: string, partial?: Partial<RemoteFeature>): RemoteFeature {
@@ -310,6 +315,7 @@ export async function getPendingUpdate(
   }
 
   if (!(await isCachedBundleUsable(pending.localPath, featureId))) {
+    await clearStalePendingRelease(featureId, pending);
     return null;
   }
 
@@ -370,6 +376,93 @@ export async function applyPendingFeature(
   return active;
 }
 
+/** User chose 稍后 — promote deferred pending on next entry before loading the page. */
+export async function applyDeferredPendingIfNeeded(
+  featureId: string,
+): Promise<CachedFeatureMetadata | null> {
+  const pending = await readPendingMetadata(featureId);
+  if (!pending?.deferredApply) {
+    return null;
+  }
+
+  try {
+    const valid = await getPendingUpdate(featureId);
+    if (!valid) {
+      await clearPendingMetadata(featureId);
+      return null;
+    }
+
+    if (__DEV__) {
+      console.log(
+        `[OTA] auto-applying deferred pending ${featureId}@${pending.version}`,
+      );
+    }
+
+    return await applyPendingFeature(featureId);
+  } catch (error) {
+    if (__DEV__) {
+      console.warn(`[OTA] deferred apply failed for ${featureId}`, error);
+    }
+    return null;
+  }
+}
+
+/**
+ * Pre-entry staging: detect remote diff and download pending bundle (no apply).
+ * Called before loading active cache so the page can show a prompt after entry.
+ */
+export async function stageRemoteFeatureUpdate(
+  featureId: string,
+  options?: { manifestUrl?: string },
+): Promise<PendingFeatureMetadata | null> {
+  try {
+    const check = await checkRemoteFeature(featureId, options);
+    const existing = await getPendingUpdate(featureId);
+
+    if (existing && matchesRemoteRelease(existing, check.remoteFeature)) {
+      if (__DEV__) {
+        console.log(
+          `[OTA] staged pending ${featureId}@${existing.version} (already downloaded)`,
+        );
+      }
+      return existing;
+    }
+
+    if (existing) {
+      await clearStalePendingRelease(featureId, existing);
+    }
+
+    if (!check.updateAvailable || check.remoteFeature.hash === 'sha256:unset') {
+      return null;
+    }
+
+    try {
+      const pending = await downloadPendingFeature(check.remoteFeature);
+      if (__DEV__) {
+        console.log(
+          `[OTA] staged pending ${featureId}@${pending.version} (pre-entry download)`,
+        );
+      }
+      return pending;
+    } catch (downloadError) {
+      if (__DEV__) {
+        console.warn(
+          `[OTA] pre-entry pending download failed for ${featureId}`,
+          downloadError,
+        );
+      }
+      return null;
+    }
+  } catch (error) {
+    if (__DEV__) {
+      console.warn(`[OTA] pre-entry staging failed for ${featureId}`, error);
+    }
+    return null;
+  }
+}
+
+export { markPendingDeferredApply } from './bundleCache';
+
 /** Load existing active cache without checking remote — for in-session OTA bootstrap. */
 export async function ensureFeatureCached(
   featureId: string,
@@ -391,8 +484,10 @@ export async function ensureFeatureCached(
     }
   }
 
-  await clearStaleActiveMetadata(featureId);
-  await clearUnusableActiveMetadata(featureId);
+  await reconcileActiveBundleCache(featureId);
+
+  const deferredApplied = await applyDeferredPendingIfNeeded(featureId);
+  await stageRemoteFeatureUpdate(featureId, { manifestUrl });
 
   const cached = await readCachedMetadata(featureId);
   const cachedFileReady =
@@ -417,6 +512,7 @@ export async function ensureFeatureCached(
         updated: false,
         bundlePath: cached.localPath,
         cachedVersion: cached.version,
+        runtimeReloadRequired: deferredApplied !== null,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Manifest unavailable';
@@ -430,11 +526,16 @@ export async function ensureFeatureCached(
         bundlePath: cached.localPath,
         cachedVersion: cached.version,
         error: message,
+        runtimeReloadRequired: deferredApplied !== null,
       };
     }
   }
 
-  return checkAndUpdateFeature(featureId, options);
+  const result = await checkAndUpdateFeature(featureId, options);
+  if (deferredApplied !== null) {
+    result.runtimeReloadRequired = true;
+  }
+  return result;
 }
 
 export async function checkAndUpdateFeature(

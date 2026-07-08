@@ -35,7 +35,7 @@ export default function OtaUpdateBanner({
           {activeVersion
             ? `当前 v${activeVersion} · 点击立即更新切换至远程版本`
             : '远程版本已下载 · 点击立即更新'}
-          {downloading ? ' · 下载中…' : ''}
+          {downloading ? ' · 下载中…' : ' · 选择稍后将在下次进入时自动更新'}
         </Text>
       </View>
       <View style={styles.actions}>
