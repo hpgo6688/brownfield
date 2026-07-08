@@ -7,7 +7,7 @@ import { useSyncExternalStore } from 'react';
  * Toggle on native shell home screen toolbar (ContentView, DEBUG only).
  *
  * Metro dev: FeatureHost loads screens/remote/ (OrderScreen, PromoScreen).
- * OTA dev/release: screens/ota/ (ota_OrderScreen, ota_PromoScreen) via bundles/ota_*.
+ * OTA dev/release: bundles/ota_<id>/screens/ via ota-prefixed jsbundle upload.
  * Shared preference: Documents/dev-ota-mode.pref
  */
 let forceOtaInDev = false;

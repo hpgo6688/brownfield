@@ -30,9 +30,9 @@ function sha256File(filePath) {
 
 function isFeatureOwnedBySplit(modulePath) {
   return (
-    /\/screens\/ota\/(OrderScreen|PromoScreen)\.tsx$/.test(modulePath) ||
+    /\/bundles\/ota_(order|promo)\//.test(modulePath) ||
     /\/screens\/remote\/RemoteScreenShell\.tsx$/.test(modulePath) ||
-    /\/bundles\/ota_(order|promo)\//.test(modulePath)
+    /\/screens\/remote\/components\//.test(modulePath)
   );
 }
 
@@ -161,6 +161,8 @@ const bundles = [
 ];
 
 async function main() {
+  process.env.METRO_BUNDLE_BUILD = '1';
+
   fs.mkdirSync(outputDir, { recursive: true });
 
   console.log(

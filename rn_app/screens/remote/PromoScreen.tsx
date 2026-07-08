@@ -12,14 +12,9 @@ import {
 } from '../../src/features/bundleUpdater';
 import { applyRemoteFeatureUpdates } from '../../src/features/featureReload';
 import { getForceOtaInDev } from '../../src/features/remoteConfig';
+import { PromoList, RemoteHero } from './components';
 import { remoteFeatureIds } from './featureMeta';
 import { RemoteScreenShell } from './RemoteScreenShell';
-
-const PROMOS = [
-  { title: '夏日满减', desc: '满 199 减 30', tag: '进行中' },
-  { title: '新客礼包', desc: '首单立减 20 元', tag: '限时' },
-  { title: '会员日', desc: '积分双倍 · 包邮', tag: '预告' },
-];
 
 export default function PromoScreen() {
   const [checking, setChecking] = useState(false);
@@ -66,25 +61,16 @@ export default function PromoScreen() {
   return (
     <RemoteScreenShell>
       <View style={styles.content}>
-        <View style={styles.hero}>
-          <Text style={styles.badge}>Remote · 远程业务</Text>
-          <Text style={styles.title}>活动</Text>
-          <Text style={styles.subtitle}>v10.0.0· 活动专区已更新，支持 OTA 热更新</Text>
-        </View>
+        <RemoteHero
+          badge="Metro · 本地开发"
+          badgeColor="#16A34A"
+          heroBackground="#F0FDF4"
+          title="活动"
+          subtitle="v0.0.3 · Metro 本地 — 活动页 HMR 测试，无需 upload"
+        />
 
         <View style={styles.card}>
-          {PROMOS.map((promo, index) => (
-            <View key={promo.title}>
-              {index > 0 ? <View style={styles.divider} /> : null}
-              <View style={styles.row}>
-                <View>
-                  <Text style={styles.promoTitle}>{promo.title}</Text>
-                  <Text style={styles.promoDesc}>{promo.desc}</Text>
-                </View>
-                <Text style={styles.promoTag}>{promo.tag}</Text>
-              </View>
-            </View>
-          ))}
+          <PromoList tagColor="#16A34A" />
           <View style={styles.divider} />
           <Pressable
             style={styles.row}
@@ -118,32 +104,6 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: '#F8FAFC',
   },
-  hero: {
-    borderRadius: 16,
-    backgroundColor: '#F0FDF4',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 48,
-    marginBottom: 16,
-  },
-  badge: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#16A34A',
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: 30,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: '#64748B',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
@@ -160,20 +120,6 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 16,
-  },
-  promoTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  promoDesc: {
-    fontSize: 14,
-    color: '#64748B',
-  },
-  promoTag: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#16A34A',
   },
   value: {
     fontSize: 15,

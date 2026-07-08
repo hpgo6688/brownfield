@@ -1,6 +1,6 @@
 {
   "name": "rn_app",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
@@ -10,6 +10,7 @@
     "test": "jest",
     "build:bundles": "node scripts/build-bundles.js",
     "build:bundles:dev": "node scripts/build-bundles.js --dev",
+    "verify:ota-scope": "node scripts/verify-ota-scope.js",
     "brownfield:package:ios": "brownfield package:ios --configuration Release --add-spm-package",
     "brownfield:package:ios:debug": "brownfield package:ios --configuration Debug --add-spm-package",
     "brownfield:package:ios:debug:sim": "brownfield package:ios --configuration Debug --add-spm-package --destination simulator"

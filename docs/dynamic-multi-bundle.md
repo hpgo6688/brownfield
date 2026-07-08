@@ -41,10 +41,9 @@ bundle-server (Fastify + Prisma)
 
 rn_app
   screens/                   → Scheme 1 核心页
-  screens/remote/            → Remote 业务页（Metro dev：OrderScreen、PromoScreen）
-  screens/ota/               → OTA split bundle 专用页（ota_OrderScreen、ota_PromoScreen）
+  screens/remote/            → Remote 业务页（Metro dev）+ components/ 共享 UI
   index.js                   → 主 bundle：Scheme 1 注册 + Remote registerFeature fallback
-  bundles/ota_{order,promo}/ → OTA split bundle 入口（输出 ota_*.ios.jsbundle）
+  bundles/ota_{order,promo}/ → OTA split bundle 入口 + screens/（输出 ota_*.ios.jsbundle）
   src/features/
     FeatureHost              → Remote 容器：manifest → OTA → 渲染
     bundleUpdater            → 版本比对、下载、缓存
@@ -57,6 +56,124 @@ ios_native
   RemoteReactNativeScreenView    → Remote：FeatureHost + featureId
   BundleManifestService        → Remote 菜单动态读取 manifest
 ```
+
+> 详细的双路径说明、目录职责、防误操作护栏见下一节 **[Remote 双路径架构](#remote-双路径架构metro-dev--ota-upload)**。
+
+## Remote 双路径架构（Metro dev · OTA upload）
+
+Remote 业务页有 **两条互不影响的源码路径**。搞混目录是常见误操作：改了 OTA 路径却等 Metro HMR，或改了 Metro 路径却期望 upload 后生效。
+
+### 一览
+
+```mermaid
+flowchart TB
+  subgraph dev["日常开发 · Metro HMR"]
+    R["screens/remote/<br/>OrderScreen.tsx"]
+    C["screens/remote/components/<br/>共享 UI（目标）"]
+    R --> C
+    FH_M["FeatureHost<br/>DEBUG Metro 模式"]
+    FH_M -->|"dynamic import"| R
+  end
+
+  subgraph upload["构建上传 · OTA 生效"]
+    B["bundles/ota_order/screens/<br/>OrderScreen.tsx（目标 colocate）"]
+    E["bundles/ota_order/index.js"]
+    E --> B
+    B --> C
+    BUILD["npm run build:bundles"]
+    UP["upload ota_order.*.ios.jsbundle"]
+    BUILD --> UP
+    FH_O["FeatureHost<br/>DEBUG OTA / Release"]
+    FH_O -->|"manifest → download → split load"| UP
+  end
+
+  subgraph guard["防误操作（目标 ota-screens-build-scope-guard）"]
+    L["ESLint：runtime 禁止 import bundles/ota_*"]
+    M["Metro blockList：dev 不解析 OTA 目录"]
+    V["npm run verify:ota-scope"]
+  end
+```
+
+### 改哪里、如何生效
+
+| 你想做什么 | 编辑目录 | 如何看到效果 | 模块名 |
+|------------|----------|--------------|--------|
+| 日常 UI 开发、Metro 热重载 | `screens/remote/` + `components/`（共享 UI） | `npm start` + 原生壳 **Metro** 模式 | `OrderScreen` / `PromoScreen` |
+| OTA 标识、upload 专用文案 | `bundles/ota_<id>/screens/` | `npm run build:bundles` → upload → 原生壳 **OTA** 模式 | `ota_OrderScreen` / `ota_PromoScreen` |
+| 运行时逻辑（加载、缓存、注册） | `src/features/` | 按模式分别走 Metro import 或 OTA pipeline | — |
+| 上传产物 / manifest | `bundle-server` + Admin | upload 后 pull manifest | `featureId` 仍为 `order` / `promo` |
+
+**记住：** `bundles/ota_*/screens/` **不会**被 `npm start` 热重载。只有 rebuild + upload 后，OTA 模式才会用到。
+
+### 目录职责（目标布局）
+
+```
+rn_app/
+├── screens/remote/                 ← Metro dev：日常改这里
+│   ├── components/                 ← 共享业务 UI（OrderList 等）
+│   ├── OrderScreen.tsx             ← Metro 包装：Remote · 远程业务 badge
+│   └── PromoScreen.tsx
+│
+├── bundles/                        ← 仅 build/upload，非 Metro dev 入口
+│   ├── README.md
+│   ├── ota_order/
+│   │   ├── index.js                ← registerFeature + AppRegistry（ota_OrderScreen）
+│   │   └── screens/
+│   │       └── OrderScreen.tsx     ← OTA 包装：OTA · 远程 Bundle badge
+│   └── ota_promo/
+│       ├── index.js
+│       └── screens/
+│           └── PromoScreen.tsx
+│
+└── src/features/
+```
+
+### DEBUG 模式切换（原生壳工具栏）
+
+| 模式 | 加载路径 | 屏幕来源 | 模块名 |
+|------|----------|----------|--------|
+| **Metro** | Metro dynamic import | `screens/remote/` | `OrderScreen` / `PromoScreen` |
+| **OTA** | manifest → 下载 → split load | `bundles/ota_*/screens/` | `ota_OrderScreen` / `ota_PromoScreen` |
+
+**隔离规则：**
+
+- 上传 bundle 文件名带 `ota_` 前缀：`ota_order.<version>.ios.jsbundle`
+- manifest `featureId` 不变（`order` / `promo`）
+- 两种模式 **不互相 fallback**；切换时清除 JS registry 与 loaded bundle 标记后重载
+- Native segment 在同一 session 内可能跳过 re-eval；`__OTA_COMPONENT_CACHE__` 用于恢复 registry（见 `docs/fixes/2026-07-08-ota-mode-switch-registration-lost.md`）
+- upload 后 OTA 仍显示旧内容 → 删除沙盒 `DocumentDirectory/rn-bundles/` 或重装 App
+
+### 防误操作护栏（目标）
+
+| 护栏 | 作用 |
+|------|------|
+| **目录 colocate** | OTA 屏幕移入 `bundles/ota_*/screens/`，与 upload 入口同目录，避免与 `screens/remote/` 并列误导 |
+| **共享 components** | 业务 UI 只在 `screens/remote/components/` 维护一份；Metro/OTA 包装层只改 badge/文案 |
+| **ESLint** | `src/`、`index.js`、`screens/remote/` 禁止 import `bundles/ota_*` |
+| **Metro blockList** | `npm start` 时不解析 `bundles/ota_*` |
+| **verify:ota-scope** | `npm run verify:ota-scope` 检查 main bundle 图不含 OTA 专用模块 |
+| **README** | `screens/remote/README.md`、`bundles/README.md` 说明编辑流程 |
+
+### 典型工作流
+
+**改 UI（大多数情况）：**
+
+```bash
+# 1. 改 screens/remote/ 或 components/
+cd rn_app && npm start
+# 2. Xcode Debug，原生壳切 Metro 模式，进订单页 → HMR 即时生效
+```
+
+**发 OTA 版本：**
+
+```bash
+cd rn_app && npm run build:bundles
+cd ../bundle-server
+./scripts/upload-bundle.sh order 0.0.2 dist/bundles/ota_order.0.0.2.ios.jsbundle
+# 原生壳切 OTA 模式，进订单页 → 显示 OTA bundle 内容
+```
+
+**新增 Remote 入口：** 见下文 [新增一个 Remote 入口](#新增一个-remote-入口)。
 
 ## 快速开始
 
@@ -105,23 +222,7 @@ cd bundle-server && USE_METRO_BUNDLES=true npm run dev
 # 终端 3 — Xcode Debug Run ios_native
 ```
 
-此模式下 manifest 里的 `bundleUrl` 会指向 Metro 的 split bundle 路径，改 `screens/remote/` 可热重载。
-
-### 3.1 DEBUG 模式隔离（Metro vs OTA）
-
-原生壳工具栏可切换 **Metro** / **OTA** 模式（仅 DEBUG）：
-
-| 模式 | 加载路径 | 屏幕来源 | 模块名 |
-|------|----------|----------|--------|
-| **Metro** | Metro 动态 import | `screens/remote/` | `OrderScreen` / `PromoScreen` |
-| **OTA** | manifest → 下载 → split load | `screens/ota/`（打包进 `ota_*.ios.jsbundle`） | `ota_OrderScreen` / `ota_PromoScreen` |
-
-**隔离规则：**
-
-- 打包上传的 bundle 文件名带 `ota_` 前缀：`ota_order.<version>.ios.jsbundle`
-- manifest `featureId` 不变（仍为 `order` / `promo`）
-- 两种模式**不互相 fallback**；切换模式会清除 registry 与已加载 bundle 后重载
-- 重新 upload 后若 OTA 仍显示旧内容，删除 App 沙盒缓存 `DocumentDirectory/rn-bundles/` 或重装 App
+此模式下 manifest 里的 `bundleUrl` 会指向 Metro 的 split bundle 路径，改 `screens/remote/` 可热重载。详见上文 [Remote 双路径架构](#remote-双路径架构metro-dev--ota-upload)。
 
 ### 4. 静态 bundle 模式（接近 Release）
 
@@ -144,13 +245,15 @@ curl -X POST http://127.0.0.1:3001/api/features/promo/toggle \
 
 ## 新增一个 Remote 入口
 
-1. 在 `rn_app/screens/remote/` 添加页面（**不要**放进 Scheme 1 的 `screens/`）
-2. 在 `screens/remote/index.ts` 的 `remoteFeatures` 注册（主 bundle fallback）
-3. 新建 `rn_app/bundles/ota_<entryId>/index.js`，注册 `ota_<ModuleName>` 并 `registerFeature(..., { source: 'ota' })`
-4. 在 `screens/ota/` 添加 OTA 专用页面（勿与 Metro `screens/remote/` 共用）
-5. 在 Admin 或 `POST /api/features` 注册 Remote 入口（**待实现** create API；当前可改 `prisma/seed.ts`）
+1. 在 `screens/remote/` 添加 Metro dev 页面；共享 UI 放 `screens/remote/components/`
+2. 在 `screens/remote/featureMeta.ts` 注册 `moduleName`（Metro 用 unprefixed 名）
+3. 新建 `bundles/ota_<entryId>/index.js`，注册 `ota_<ModuleName>` 并 `registerFeature(..., { source: 'ota' })`
+4. 在 `bundles/ota_<entryId>/screens/` 添加 OTA 包装页
+5. 在 Admin 或 `prisma/seed.ts` 注册 Remote 入口
 6. 在 `scripts/build-bundles.js` 的 `bundles` 数组加一项（output 带 `ota_` 前缀）
-7. `npm run build:bundles` → Admin 或 `upload-bundle.sh` 上传 `ota_<entryId>.*.ios.jsbundle`
+7. `npm run build:bundles` → upload `ota_<entryId>.*.ios.jsbundle`
+
+> 日常开发只改 `screens/remote/`；OTA 包装仅在需要改 upload 标识或 OTA 专用逻辑时动 `bundles/ota_*/screens/`。
 
 ## 迁移到 Remote 模型
 
@@ -216,6 +319,8 @@ cd ../bundle-server && npm run smoke:e2e
 | `rn_app/src/features/bundleCache.ts` | 沙盒路径与 metadata |
 | `rn_app/src/features/bundleLoader.ts` | Dev Metro / Release SplitBundleLoader |
 | `rn_app/src/features/FeatureHost.tsx` | Remote 页面容器 |
+| `rn_app/screens/remote/README.md` | Metro dev 编辑说明 |
+| `rn_app/bundles/README.md` | OTA build/upload 说明 |
 | `rn_app/ios/BrownfieldLib/SplitBundleLoader.mm` | Release split load |
 | `ios_native/.../BundleManifestService.swift` | Remote 菜单 |
 
@@ -282,8 +387,9 @@ preloadFeatures(['order', 'promo']);
 ```mermaid
 flowchart TB
     subgraph Publish["发布侧"]
-        A["改 screens/remote/"] --> B["npm run build:bundles"]
-        B --> C["POST /api/bundles/upload"]
+        A["改 screens/remote/components/"] --> B["npm run build:bundles"]
+        B2["（可选）改 bundles/ota_*/screens/ 包装"] --> B
+        B --> C["POST /api/bundles/upload<br/>ota_*.ios.jsbundle"]
         C --> D["DB 更新 active release"]
     end
 
@@ -322,10 +428,10 @@ flowchart TB
       "id": "order",
       "title": "订单",
       "icon": "cart",
-      "moduleName": "OrderScreen",
+      "moduleName": "ota_OrderScreen",
       "version": "1.2.0",
       "hash": "sha256:abc123...",
-      "bundleUrl": "http://127.0.0.1:3001/bundles/order.1.2.0.ios.jsbundle",
+      "bundleUrl": "http://127.0.0.1:3001/bundles/ota_order.1.2.0.ios.jsbundle",
       "minAppVersion": "1.0.0"
     }
   ]
@@ -368,4 +474,5 @@ DocumentDirectory/rn-bundles/
 - 模拟器用 `127.0.0.1`；真机改局域网 IP
 - moduleId 见 `metro.config.js` deterministic factory
 
-更多背景：[multi-bundle.md](./multi-bundle.md)
+更多背景：[multi-bundle.md](./multi-bundle.md)  
+面试 / 复盘案例：[case-study-remote-ota-metro-isolation.md](./case-study-remote-ota-metro-isolation.md)

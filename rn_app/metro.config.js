@@ -1,4 +1,5 @@
 const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
+const path = require('path');
 
 /** Deterministic module IDs so feature bundles stay compatible with the main bundle. */
 function createModuleIdFactory() {
@@ -14,6 +15,16 @@ function createModuleIdFactory() {
 const config = {
   serializer: {
     createModuleIdFactory,
+  },
+  resolver: {
+    ...(process.env.METRO_BUNDLE_BUILD
+      ? {}
+      : {
+          blockList: [
+            // OTA split bundle trees are build/upload-only — not part of Metro dev graph.
+            new RegExp(`${path.sep}bundles${path.sep}ota_.*${path.sep}.*`),
+          ],
+        }),
   },
 };
 
