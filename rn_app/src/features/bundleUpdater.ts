@@ -115,11 +115,19 @@ export function needsUpdate(
     return true;
   }
 
+  const bothValid =
+    semver.valid(remote.version) && semver.valid(local.version);
+
+  // Server active rolled below our cached version — keep local; staged downgrade uses pending only.
+  if (bothValid && semver.lt(remote.version, local.version)) {
+    return false;
+  }
+
   if (normalizeHash(remote.hash) !== normalizeHash(local.hash)) {
     return true;
   }
 
-  if (semver.valid(remote.version) && semver.valid(local.version)) {
+  if (bothValid) {
     return semver.gt(remote.version, local.version);
   }
 
@@ -283,6 +291,14 @@ export async function getPendingUpdate(
     return null;
   }
 
+  // Pending is older than active (e.g. server rolled 0.0.3 → 0.0.5 while 0.0.3 sat in pending).
+  if (semver.valid(pending.version) && semver.valid(active.version)) {
+    if (!semver.gt(pending.version, active.version)) {
+      await clearPendingMetadata(featureId);
+      return null;
+    }
+  }
+
   return pending;
 }
 
@@ -340,7 +356,15 @@ export async function ensureFeatureCached(
 
   if (cachedFileReady && cached) {
     try {
-      const feature = await fetchFeatureById(featureId, manifestUrl);
+      clearManifestCache();
+      const feature = await fetchFeatureById(featureId, manifestUrl, {
+        forceRefresh: true,
+      });
+
+      if (needsUpdate(feature, cached)) {
+        return checkAndUpdateFeature(featureId, options);
+      }
+
       return {
         featureId,
         feature,

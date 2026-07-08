@@ -90,25 +90,30 @@ async function loadFromNativeSplitBundle(
 
   await SplitBundleLoader!.load(path, segmentId);
 
-  const entryOk = await executeSplitBundleEntry(path, {
-    featureId: feature.id,
-  });
-
-  if (!entryOk && !isFeatureLoadedFromOta(feature.id)) {
-    if (activeMeta) {
-      await deleteCachedBundle(feature.id, activeMeta.version);
-      await clearActiveMetadata(feature.id);
+  const syncFromCache = () => {
+    if (!activeMeta) {
+      return;
     }
-    await clearUnusableActiveMetadata(feature.id);
-    throw new Error(formatRemoteBundleError(feature.id, 'not registered'));
+
+    syncOtaRegistrationFromCache(feature.id, {
+      expectedVersion: activeMeta.version,
+      expectedHash: activeMeta.hash,
+      expectedLocalPath: activeMeta.localPath,
+    });
+  };
+
+  if (!isFeatureLoadedFromOta(feature.id)) {
+    syncFromCache();
   }
 
   if (!isFeatureLoadedFromOta(feature.id)) {
-    syncOtaRegistrationFromCache(feature.id, {
-      expectedVersion: activeMeta?.version ?? null,
-      expectedHash: activeMeta?.hash ?? null,
-      expectedLocalPath: activeMeta?.localPath ?? null,
+    await executeSplitBundleEntry(path, {
+      featureId: feature.id,
     });
+  }
+
+  if (!isFeatureLoadedFromOta(feature.id)) {
+    syncFromCache();
   }
 
   if (!isFeatureLoadedFromOta(feature.id)) {

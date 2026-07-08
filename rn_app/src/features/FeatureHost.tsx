@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { ComponentType } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { ensureFeatureCached, formatRemoteBundleError } from './bundleUpdater';
-import { isBundleCacheAvailable } from './bundleCache';
+import { ensureFeatureCached, formatRemoteBundleError, type UpdateCheckResult } from './bundleUpdater';
+import { getCachedFeatureVersion, isBundleCacheAvailable } from './bundleCache';
 import {
   clearLoadedBundlesForFeature,
   loadFeatureBundle,
@@ -22,6 +22,52 @@ import {
   getFeatureSource,
   waitForFeatureComponent,
 } from './registerFeature';
+import { fetchFeatureById } from './manifest';
+
+type FeatureLoadError = {
+  message: string;
+  remoteVersion?: string | null;
+  localVersion?: string | null;
+};
+
+function formatVersionLabel(version: string | null | undefined): string {
+  if (!version || version === '0.0.0') {
+    return '无';
+  }
+  return `v${version}`;
+}
+
+async function resolveOtaVersionContext(
+  featureId: string,
+  manifestUrl: string | undefined,
+  hints?: { remoteVersion?: string | null; localVersion?: string | null },
+): Promise<Pick<FeatureLoadError, 'remoteVersion' | 'localVersion'>> {
+  const localVersion =
+    hints?.localVersion ?? (await getCachedFeatureVersion(featureId));
+
+  let remoteVersion = hints?.remoteVersion ?? null;
+  if (remoteVersion == null) {
+    try {
+      const feature = await fetchFeatureById(featureId, manifestUrl, {
+        forceRefresh: true,
+      });
+      remoteVersion = feature.version;
+    } catch {
+      remoteVersion = null;
+    }
+  }
+
+  return { remoteVersion, localVersion };
+}
+
+function versionContextFromUpdateResult(
+  result: UpdateCheckResult | null,
+): Pick<FeatureLoadError, 'remoteVersion' | 'localVersion'> {
+  return {
+    remoteVersion: result?.feature.version ?? null,
+    localVersion: result?.cachedVersion ?? null,
+  };
+}
 
 type FeatureHostProps = {
   featureId?: string;
@@ -49,7 +95,7 @@ export default function FeatureHost({
 }: FeatureHostProps) {
   const otaBundleRevision = useOtaBundleRevision();
   const [Screen, setScreen] = useState<ComponentType | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FeatureLoadError | null>(null);
   const [otaModeActive, setOtaModeActive] = useState(false);
   const [screenReady, setScreenReady] = useState(false);
 
@@ -64,7 +110,7 @@ export default function FeatureHost({
 
     async function loadFeature() {
       if (!featureId) {
-        setError('Missing featureId');
+        setError({ message: 'Missing featureId' });
         setScreen(null);
         setScreenReady(false);
         setOtaModeActive(false);
@@ -85,6 +131,8 @@ export default function FeatureHost({
         setForceOtaInDev(useOta);
       }
 
+      let updateResult: UpdateCheckResult | null = null;
+
       if (!useOta) {
         try {
           const { loadMetroDevFeature } = await import('./metroDevFeatures');
@@ -97,7 +145,7 @@ export default function FeatureHost({
           if (!cancelled) {
             const message =
               metroError instanceof Error ? metroError.message : 'Unknown load error';
-            setError(message);
+            setError({ message });
             setScreen(null);
             setScreenReady(false);
           }
@@ -112,16 +160,19 @@ export default function FeatureHost({
           );
         }
 
-        const updateResult = await ensureFeatureCached(featureId, {
+        updateResult = await ensureFeatureCached(featureId, {
           manifestUrl,
         });
 
         if (!updateResult.bundlePath) {
           if (!cancelled) {
-            setError(
-              updateResult.error ??
+            const versions = versionContextFromUpdateResult(updateResult);
+            setError({
+              message:
+                updateResult.error ??
                 formatRemoteBundleError(featureId),
-            );
+              ...versions,
+            });
             setScreen(null);
             setScreenReady(false);
           }
@@ -158,7 +209,12 @@ export default function FeatureHost({
         if (!cancelled) {
           const raw =
             loadError instanceof Error ? loadError.message : 'Unknown load error';
-          setError(formatRemoteBundleError(featureId, raw));
+          const hints = versionContextFromUpdateResult(updateResult);
+          const versions = await resolveOtaVersionContext(featureId, manifestUrl, hints);
+          setError({
+            message: formatRemoteBundleError(featureId, raw),
+            ...versions,
+          });
           setScreen(null);
           setScreenReady(false);
         }
@@ -187,7 +243,17 @@ export default function FeatureHost({
         {error ? (
           <View style={styles.center}>
             <Text style={styles.errorTitle}>页面加载失败</Text>
-            <Text style={styles.errorBody}>{error}</Text>
+            <Text style={styles.errorBody}>{error.message}</Text>
+            {otaModeActive ? (
+              <View style={styles.errorVersionBox}>
+                <Text style={styles.errorVersionRow}>
+                  服务端版本：{formatVersionLabel(error.remoteVersion)}
+                </Text>
+                <Text style={styles.errorVersionRow}>
+                  本地版本：{formatVersionLabel(error.localVersion)}
+                </Text>
+              </View>
+            ) : null}
           </View>
         ) : !Screen ? (
           <View style={styles.center}>
@@ -265,6 +331,21 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  errorVersionBox: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    alignSelf: 'stretch',
+    maxWidth: 320,
+  },
+  errorVersionRow: {
+    fontSize: 13,
+    color: '#475569',
+    textAlign: 'center',
+    lineHeight: 22,
   },
   pollError: {
     position: 'absolute',
