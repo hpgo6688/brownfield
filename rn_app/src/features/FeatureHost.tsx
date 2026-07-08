@@ -8,13 +8,23 @@ import {
   type RemoteFeatureId,
 } from '../../screens/remote';
 import { checkAndUpdateFeature } from './bundleUpdater';
-import { loadFeatureBundle } from './bundleLoader';
+import {
+  clearLoadedBundlesForFeature,
+  loadFeatureBundle,
+} from './bundleLoader';
 import { OtaModeToggle } from './OtaModeToggle';
 import {
   allowsMainBundleFallback,
+  setForceOtaInDev,
   useForceOtaInDev,
+  useOtaBundleRevision,
 } from './remoteConfig';
-import { getFeatureComponent, waitForFeatureComponent } from './registerFeature';
+import {
+  clearFeatureRegistration,
+  getFeatureComponent,
+  waitForFeatureComponent,
+} from './registerFeature';
+import { consumeStartupOtaModePreference } from './otaModeFlag';
 
 type FeatureHostProps = {
   featureId?: string;
@@ -36,6 +46,7 @@ export default function FeatureHost({
   manifestUrl,
 }: FeatureHostProps) {
   const forceOtaInDev = useForceOtaInDev();
+  const otaBundleRevision = useOtaBundleRevision();
   const [Screen, setScreen] = useState<ComponentType | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,11 +62,34 @@ export default function FeatureHost({
 
       setError(null);
 
-      if (!forceOtaInDev) {
-        const mainComponent = resolveMainFeatureComponent(featureId);
-        if (mainComponent) {
+      const bootOta = await consumeStartupOtaModePreference();
+      if (bootOta) {
+        setForceOtaInDev(true);
+      }
+
+      const useOta = forceOtaInDev || bootOta;
+
+      // Metro 模式：async import 避免 OrderScreen 进入主 bundle，与 OTA split 争用 module id
+      if (!useOta) {
+        try {
+          const { loadMetroDevFeature } = await import('./metroDevFeatures');
+          const component = await loadMetroDevFeature(featureId);
           if (!cancelled) {
-            setScreen(() => mainComponent);
+            setScreen(() => component);
+          }
+          return;
+        } catch (metroError) {
+          const fallback = resolveMainFeatureComponent(featureId);
+          if (fallback && !cancelled) {
+            setScreen(() => fallback);
+            return;
+          }
+
+          if (!cancelled) {
+            const message =
+              metroError instanceof Error ? metroError.message : 'Unknown load error';
+            setError(message);
+            setScreen(null);
           }
           return;
         }
@@ -65,51 +99,39 @@ export default function FeatureHost({
         setScreen(null);
       }
 
-      const otaOnly = forceOtaInDev;
-
+      // OTA 模式：native split 加载服务端 bundle
       try {
         const updateResult = await checkAndUpdateFeature(featureId, {
           manifestUrl,
         });
 
-        if (forceOtaInDev && !updateResult.bundlePath) {
+        if (!updateResult.bundlePath) {
           throw new Error(
             updateResult.error ??
               'OTA 模式：无缓存 bundle。请先上传到 bundle-server，再在活动页点「检查 Remote 更新」。',
           );
         }
 
-        if (updateResult.bundlePath) {
-          try {
-            await loadFeatureBundle(updateResult.feature, {
-              localPath: updateResult.bundlePath,
-            });
-          } catch (loadError) {
-            if (forceOtaInDev || !resolveMainFeatureComponent(featureId)) {
-              throw loadError;
-            }
-          }
-        } else if (forceOtaInDev) {
-          throw new Error(`OTA 模式：feature "${featureId}" 没有可加载的 bundle。`);
+        clearFeatureRegistration(featureId);
+        if (updateResult.updated) {
+          clearLoadedBundlesForFeature(featureId);
         }
 
-        const component =
-          updateResult.bundlePath
-            ? await waitForFeatureComponent(featureId, {
-                otaOnly: forceOtaInDev,
-              })
-            : null;
+        await loadFeatureBundle(updateResult.feature, {
+          localPath: updateResult.bundlePath,
+          force: updateResult.updated,
+        });
+
+        const component = await waitForFeatureComponent(featureId, {
+          otaOnly: true,
+        });
 
         const resolvedComponent =
-          component ??
-          getFeatureComponent(featureId, { otaOnly }) ??
-          (!otaOnly ? resolveMainFeatureComponent(featureId) : null);
+          component ?? getFeatureComponent(featureId, { otaOnly: true });
 
         if (!resolvedComponent) {
           throw new Error(
-            forceOtaInDev
-              ? `OTA 模式：feature "${featureId}" 的 bundle 已加载，但组件未注册。请确认 bundle 内调用了 registerFeature。`
-              : `Feature "${featureId}" is not available`,
+            `OTA 模式：feature "${featureId}" 的 bundle 已加载，但组件未注册。请确认 bundle 内调用了 registerFeature。`,
           );
         }
 
@@ -141,7 +163,7 @@ export default function FeatureHost({
     return () => {
       cancelled = true;
     };
-  }, [featureId, manifestUrl, forceOtaInDev]);
+  }, [featureId, manifestUrl, forceOtaInDev, otaBundleRevision]);
 
   return (
     <SafeAreaProvider>
@@ -157,7 +179,9 @@ export default function FeatureHost({
             <Text style={styles.loadingText}>加载中…</Text>
             {__DEV__ ? (
               <Text style={styles.modeHint}>
-                {forceOtaInDev ? 'OTA 模式 · 走本地缓存 + native' : 'Metro 模式 · 走主 bundle'}
+                {forceOtaInDev
+                  ? 'OTA 模式 · 本地缓存 + native split'
+                  : 'Metro 模式 · 直连源码（改 screens/remote 可热更新）'}
               </Text>
             ) : null}
           </View>

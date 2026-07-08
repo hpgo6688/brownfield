@@ -71,7 +71,7 @@ async function loadFromNativeSplitBundle(
  */
 export async function loadFeatureBundle(
   feature: RemoteFeature,
-  options?: { localPath?: string | null },
+  options?: { localPath?: string | null; force?: boolean },
 ): Promise<void> {
   const localPath = options?.localPath ?? null;
   const loadKey = localPath
@@ -82,7 +82,7 @@ export async function loadFeatureBundle(
     ? isFeatureLoadedFromOta(feature.id)
     : isFeatureLoaded(feature.id);
 
-  if (alreadyLoaded && loadedBundleKeys.has(loadKey)) {
+  if (!options?.force && alreadyLoaded && loadedBundleKeys.has(loadKey)) {
     return;
   }
 
@@ -124,4 +124,12 @@ export async function loadFeatureBundle(
 
 export function clearLoadedBundles() {
   loadedBundleKeys.clear();
+}
+
+export function clearLoadedBundlesForFeature(featureId: string) {
+  for (const key of loadedBundleKeys) {
+    if (key.startsWith(`${featureId}:`)) {
+      loadedBundleKeys.delete(key);
+    }
+  }
 }

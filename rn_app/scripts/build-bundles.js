@@ -28,13 +28,26 @@ function sha256File(filePath) {
   return `sha256:${createHash('sha256').update(buffer).digest('hex')}`;
 }
 
+function isFeatureOwnedBySplit(modulePath) {
+  return (
+    /\/screens\/remote\/(OrderScreen|PromoScreen)\.tsx$/.test(modulePath) ||
+    /\/screens\/remote\/RemoteScreenShell\.tsx$/.test(modulePath) ||
+    /\/bundles\/(order|promo)\//.test(modulePath)
+  );
+}
+
 function shouldExcludeFromSplitModule(module, mainModulePaths) {
   const modulePath = module.path;
+
+  if (isFeatureOwnedBySplit(modulePath)) {
+    return false;
+  }
 
   if (
     modulePath.includes('__prelude__') ||
     modulePath.includes('/node_modules/metro-runtime/src/polyfills/require.js') ||
-    modulePath.includes('/node_modules/react-native/Libraries/polyfills/')
+    modulePath.includes('/node_modules/react-native/Libraries/polyfills/') ||
+    modulePath.includes('/node_modules/react-native/Libraries/Core/InitializeCore.js')
   ) {
     return true;
   }
@@ -49,7 +62,30 @@ async function collectMainModulePaths(config) {
     dev: isDev,
   });
 
-  return new Set([...graph.dependencies.values()].map(module => module.path));
+  return new Set(
+    [...graph.dependencies.values()]
+      .map(module => module.path)
+      .filter(modulePath => !isFeatureOwnedBySplit(modulePath)),
+  );
+}
+
+function finalizeSplitBundle(bundlePath, entryFile) {
+  let code = fs.readFileSync(bundlePath, 'utf8');
+  const entryLabel = entryFile.replace(/\\/g, '/');
+  const entryPattern = new RegExp(
+    `},(\\d+),\\[[^\\]]*\\],"${entryLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"\\)`,
+  );
+  const entryMatch = code.match(entryPattern);
+  if (!entryMatch) {
+    console.warn(`Could not locate entry module id for ${entryLabel} in ${bundlePath}`);
+    return;
+  }
+
+  const entryModuleId = entryMatch[1];
+  code = code.replace(/\n__r\(\d+\);/g, '');
+  code = `${code.trim()}\n__r(${entryModuleId});\n`;
+  fs.writeFileSync(bundlePath, code);
+  console.log(`Finalized split bundle entry __r(${entryModuleId})`);
 }
 
 async function buildBundle(metroServer, options) {
@@ -69,6 +105,7 @@ async function createSplitMetroServer(baseConfig, mainModulePaths) {
   const splitConfig = mergeConfig(baseConfig, {
     serializer: {
       ...baseConfig.serializer,
+      getModulesRunBeforeMainModule: () => [],
       processModuleFilter: module => {
         return !shouldExcludeFromSplitModule(module, mainModulePaths);
       },
@@ -149,6 +186,10 @@ async function main() {
           runModule: true,
           out: outputPath,
         });
+
+        if (bundle.split) {
+          finalizeSplitBundle(outputPath, bundle.entry);
+        }
       } finally {
         if (bundle.split) {
           await metroServer.end();

@@ -10,6 +10,7 @@ import {
   checkAndUpdateFeature,
   getCachedFeatureVersion,
 } from '../../src/features/bundleUpdater';
+import { bumpOtaBundleRevision, getForceOtaInDev } from '../../src/features/remoteConfig';
 import { remoteFeatureIds } from './featureMeta';
 import { RemoteScreenShell } from './RemoteScreenShell';
 
@@ -41,6 +42,9 @@ export default function PromoScreen() {
       );
 
       const updated = results.filter(result => result.updated);
+      if (getForceOtaInDev()) {
+        bumpOtaBundleRevision();
+      }
       setUpdateMessage(
         updated.length > 0
           ? `已更新 ${updated.map(item => item.featureId).join(', ')}`
@@ -60,7 +64,7 @@ export default function PromoScreen() {
         <View style={styles.hero}>
           <Text style={styles.badge}>Remote · 远程业务</Text>
           <Text style={styles.title}>活动</Text>
-          <Text style={styles.subtitle}>v10.0.0 · 活动专区已更新，支持 OTA 热更新</Text>
+          <Text style={styles.subtitle}>v10.0.0· 活动专区已更新，支持 OTA 热更新</Text>
         </View>
 
         <View style={styles.card}>

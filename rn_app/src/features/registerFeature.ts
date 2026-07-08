@@ -58,6 +58,19 @@ export function isFeatureLoadedFromOta(featureId: string) {
   return getFeatureSource(featureId) === 'ota';
 }
 
+export function clearFeatureRegistration(featureId?: string) {
+  if (!global.__RN_FEATURE_REGISTRY__) {
+    return;
+  }
+
+  if (featureId == null) {
+    global.__RN_FEATURE_REGISTRY__ = {};
+    return;
+  }
+
+  delete global.__RN_FEATURE_REGISTRY__[featureId];
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }

@@ -1,6 +1,8 @@
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { DevSettings, Pressable, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { clearLoadedBundles } from './bundleLoader';
+import { clearFeatureRegistration } from './registerFeature';
+import { persistOtaModeOnNextLaunch } from './otaModeFlag';
 import {
   getForceOtaInDev,
   setForceOtaInDev,
@@ -19,9 +21,18 @@ export function OtaModeToggle({ absolute = true }: OtaModeToggleProps) {
     return null;
   }
 
-  function handlePress() {
+  async function handlePress() {
+    const nextOta = !getForceOtaInDev();
     clearLoadedBundles();
-    setForceOtaInDev(!getForceOtaInDev());
+    clearFeatureRegistration();
+
+    if (nextOta) {
+      await persistOtaModeOnNextLaunch();
+      DevSettings.reload();
+      return;
+    }
+
+    setForceOtaInDev(false);
   }
 
   return (

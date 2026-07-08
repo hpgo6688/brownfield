@@ -5,8 +5,12 @@ import { useSyncExternalStore } from 'react';
  * instead of the Metro main-bundle fallback.
  *
  * Toggle in-app via OtaModeToggle on FeatureHost (top-left on all Remote pages).
+ *
+ * Metro dev: FeatureHost loads screens/remote via loadMetroDevFeature().
+ * OTA dev/release: bundle-server cache + native SplitBundleLoader.
  */
 let forceOtaInDev = false;
+let otaBundleRevision = 0;
 const listeners = new Set<() => void>();
 
 function emitChange() {
@@ -33,6 +37,23 @@ export function toggleForceOtaInDev(): boolean {
 
 export function allowsMainBundleFallback(): boolean {
   return !getForceOtaInDev();
+}
+
+export function bumpOtaBundleRevision(): void {
+  otaBundleRevision += 1;
+  emitChange();
+}
+
+function getOtaBundleRevision(): number {
+  return otaBundleRevision;
+}
+
+export function useOtaBundleRevision(): number {
+  return useSyncExternalStore(
+    subscribeForceOtaInDev,
+    getOtaBundleRevision,
+    () => 0,
+  );
 }
 
 function subscribeForceOtaInDev(listener: () => void): () => void {
