@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// RN dynamic feature entry (Scheme 2 page)
+model Feature {
+  id              String          @id
+  title           String
+  icon            String          @default("square.grid.2x2")
+  moduleName      String
+  metroEntry      String
+  enabled         Boolean         @default(true)
+  minAppVersion   String          @default("1.0.0")
+  activeReleaseId String?         @unique
+  activeRelease   BundleRelease?  @relation("ActiveRelease", fields: [activeReleaseId], references: [id])
+  releases        BundleRelease[] @relation("FeatureReleases")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+/// Versioned bundle artifact for a feature
+model BundleRelease {
+  id        String   @id @default(cuid())
+  featureId String
+  feature   Feature  @relation("FeatureReleases", fields: [featureId], references: [id], onDelete: Cascade)
+  version   String
+  hash      String
+  filename  String
+  notes     String?
+  createdAt DateTime @default(now())
+  activeFor Feature? @relation("ActiveRelease")
+
+  @@unique([featureId, version])
+  @@index([featureId, createdAt])
+}

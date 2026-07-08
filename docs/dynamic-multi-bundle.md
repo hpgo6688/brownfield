@@ -29,17 +29,39 @@ ios_native
 
 ## 快速开始
 
-### 1. 启动 bundle-server
+### 1. 启动 bundle-server（Fastify + Prisma + SQLite）
+
+技术栈：**TypeScript · Fastify · Prisma · SQLite**（零配置本地开发；生产可改 `DATABASE_URL` 为 PostgreSQL）
 
 ```bash
 cd bundle-server
 npm install
-npm start
+npm run db:push    # 初始化 SQLite
+npm run db:seed    # 写入 home / profile / settings 三个 feature
+npm run dev        # 开发热重载
+# 或 npm run build && npm start
 ```
 
-Manifest 地址：`http://127.0.0.1:3001/api/manifest`
+| 地址 | 说明 |
+|------|------|
+| http://127.0.0.1:3001/admin | **管理后台**：上传 bundle、查看版本、回滚 |
+| http://127.0.0.1:3001/api/manifest | 移动端 manifest JSON |
 
-### 2. 开发模式（Metro 热重载子 bundle）
+### 2. 管理后台：上传与回滚
+
+1. 打开 `/admin`
+2. 选择 feature，填写 semver 版本号，上传 `.jsbundle`
+3. 勾选「上传后立即上线」或稍后在历史版本里点 **设为线上** / **回滚到此版本**
+4. 移动端下拉刷新菜单或重新进入 Scheme 2 页面即可拉新 manifest
+
+```bash
+# API 回滚示例
+curl -X POST http://127.0.0.1:3001/api/features/home/rollback \
+  -H 'Content-Type: application/json' \
+  -d '{"releaseId": "<release-id>"}'
+```
+
+### 3. 开发模式（Metro 热重载子 bundle）
 
 ```bash
 # 终端 1 — Metro
@@ -54,7 +76,7 @@ USE_METRO_BUNDLES=true npm start
 
 此模式下 manifest 里的 `bundleUrl` 会指向 Metro 的 split bundle 路径，改 `screens/dynamic/` 可热重载。
 
-### 3. 静态 bundle 模式（接近 Release）
+### 4. 静态 bundle 模式（接近 Release）
 
 ```bash
 # 构建全部 bundle 到 bundle-server/dist/bundles/
@@ -68,12 +90,11 @@ npm start
 # Xcode Run（Debug 连 Metro 主 bundle + 静态子 bundle，或 Release 全静态）
 ```
 
-### 4. 服务端控制入口
+### 5. 服务端控制入口
 
-编辑 `bundle-server/manifest.config.js`，将某个 feature 的 `enabled` 设为 `false`，重启 server（或使用 API）后，原生菜单会自动隐藏该入口。
+在 **Admin 后台** 点击「禁用入口 / 启用入口」，或调用 API：
 
 ```bash
-# 运行时切换（示例：关闭 settings）
 curl -X POST http://127.0.0.1:3001/api/features/settings/toggle \
   -H 'Content-Type: application/json' \
   -d '{"enabled": false}'
@@ -86,16 +107,19 @@ curl -X POST http://127.0.0.1:3001/api/features/settings/toggle \
 1. 在 `rn_app/screens/dynamic/` 添加页面组件（不要用方案 1 的 `screens/`）
 2. 在 `screens/dynamic/index.ts` 的 `dynamicFeatures` 里注册
 3. 新建 `rn_app/bundles/<id>/index.js` 并 `registerFeature`
-4. 在 `bundle-server/manifest.config.js` 注册 feature
+4. 在 Admin 后台或 `prisma/seed.ts` 注册新 feature（或通过 Prisma 直接插入）
 5. 在 `rn_app/scripts/build-bundles.js` 的 `bundles` 数组里加一项
-6. `npm run build:bundles`
+6. `npm run build:bundles`，然后在 `/admin` 上传
 
 ## 关键文件
 
 | 文件 | 说明 |
 |------|------|
-| `bundle-server/manifest.config.js` | 服务端入口配置（启用/禁用、bundle 文件名） |
-| `bundle-server/server.js` | Express 服务 |
+| `bundle-server/prisma/schema.prisma` | Feature / BundleRelease 数据模型 |
+| `bundle-server/src/index.ts` | Fastify 入口 |
+| `bundle-server/src/admin/index.html` | 管理后台 UI（上传、回滚） |
+| `bundle-server/src/services/manifest.service.ts` | manifest 组装（含 version/hash） |
+| `bundle-server/src/services/bundle.service.ts` | 上传、激活、回滚 |
 | `rn_app/src/features/FeatureHost.tsx` | RN 动态加载容器 |
 | `rn_app/screens/dynamic/` | 方案 2 独立页面（与方案 1 分离） |
 | `rn_app/src/features/bundleLoader.ts` | 下载并加载子 bundle（Dev: Metro split） |
@@ -107,7 +131,7 @@ curl -X POST http://127.0.0.1:3001/api/features/settings/toggle \
 
 方案 2 的最终目标是：**RN 子 bundle 打包后上传到 Node 服务，移动端自动拉 manifest、比对版本、下载并加载新 bundle**，无需发版原生 App。
 
-> **当前状态：** 架构与分发路径已就绪（manifest + 静态托管 + FeatureHost），**完整 OTA 链路（版本比对、本地缓存、上传 API、Release 安全加载）待实现**。下表与流程图为目标设计。
+> **当前状态：** 服务端已支持 manifest v2、上传、Admin 管理、版本回滚（Fastify + Prisma）。移动端 **版本比对、本地缓存、Release split 加载** 仍待实现。
 
 ### 能力对照
 
@@ -117,10 +141,11 @@ curl -X POST http://127.0.0.1:3001/api/features/settings/toggle \
 | manifest 动态入口 | ✅ 已有 | `GET /api/manifest` 控制显示哪些页面 |
 | 移动端拉 manifest | ✅ 已有 | `BundleManifestService` + `FeatureHost` |
 | Dev 增量 bundle | ✅ 已有 | Metro `modulesOnly=true` |
-| manifest 版本字段 | ❌ 待做 | per-feature `version` / `hash` / `minAppVersion` |
-| 本地缓存 | ❌ 待做 | 沙盒持久化 bundle + metadata |
-| 上传 API | ❌ 待做 | `POST /api/bundles/upload`，替代手动拷贝 `dist/` |
-| Release 热加载 | ❌ 待做 | Native `loadSplitBundle`，禁止对完整 bundle `eval` |
+| manifest 版本字段 | ✅ 已有 | manifest v2 含 `version` / `hash` / `minAppVersion` |
+| 上传 API + Admin | ✅ 已有 | `POST /api/bundles/upload` + `/admin` 管理页 |
+| 版本回滚 | ✅ 已有 | Admin / `POST /api/features/:id/rollback` |
+| 本地缓存 | ❌ 待做 | 移动端沙盒持久化 bundle |
+| Release 热加载 | ❌ 待做 | Native `loadSplitBundle`，禁止完整 bundle `eval` |
 
 ### OTA 触发点：原生端 vs RN 页面内
 

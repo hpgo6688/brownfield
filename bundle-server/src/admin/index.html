@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bundle Server Admin</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+    }
+    body { margin: 0; padding: 24px; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    .sub { color: #64748b; margin-bottom: 24px; }
+    .grid { display: grid; gap: 16px; }
+    .card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      padding: 16px;
+    }
+    .card h2 { margin: 0 0 4px; font-size: 18px; }
+    .meta { color: #64748b; font-size: 13px; margin-bottom: 12px; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .on { background: #dcfce7; color: #166534; }
+    .off { background: #fee2e2; color: #991b1b; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+    th { color: #64748b; font-weight: 600; }
+    code { font-size: 12px; word-break: break-all; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    button {
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    button.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+    button.warn { background: #f97316; color: #fff; border-color: #f97316; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .toolbar { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; }
+    .upload {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(120px, 1fr)) auto;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    input, select {
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 14px;
+    }
+    .toast {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      background: #0f172a;
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 10px;
+      opacity: 0;
+      transition: opacity .2s;
+    }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <h1>Bundle Server Admin</h1>
+  <p class="sub">管理 Scheme 2 动态页面：发布 bundle、切换线上版本、回滚历史版本</p>
+
+  <div class="toolbar">
+    <button class="primary" id="refreshBtn">刷新</button>
+    <a href="/api/manifest" target="_blank">查看 manifest JSON</a>
+  </div>
+
+  <div class="grid" id="featureList"></div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const featureList = document.getElementById('featureList');
+    const toastEl = document.getElementById('toast');
+
+    function toast(message) {
+      toastEl.textContent = message;
+      toastEl.classList.add('show');
+      setTimeout(() => toastEl.classList.remove('show'), 2200);
+    }
+
+    async function api(path, options) {
+      const response = await fetch(path, options);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || response.statusText);
+      return data;
+    }
+
+    function renderFeature(feature) {
+      const active = feature.activeRelease;
+      const releases = feature.releases || [];
+
+      const rows = releases.map(release => {
+        const isActive = active && active.id === release.id;
+        return `
+          <tr>
+            <td>${release.version}${isActive ? ' <span class="badge on">线上</span>' : ''}</td>
+            <td><code>${release.hash}</code></td>
+            <td>${new Date(release.createdAt).toLocaleString()}</td>
+            <td>
+              <div class="actions">
+                <button ${isActive ? 'disabled' : ''} data-action="activate" data-feature="${feature.id}" data-release="${release.id}">
+                  设为线上
+                </button>
+                <button class="warn" ${isActive ? 'disabled' : ''} data-action="rollback" data-feature="${feature.id}" data-release="${release.id}">
+                  回滚到此版本
+                </button>
+              </div>
+            </td>
+          </tr>`;
+      }).join('');
+
+      return `
+        <div class="card" data-feature-card="${feature.id}">
+          <h2>${feature.title} <span class="badge ${feature.enabled ? 'on' : 'off'}">${feature.enabled ? '已启用' : '已禁用'}</span></h2>
+          <div class="meta">${feature.id} · ${feature.moduleName}</div>
+          <div class="actions" style="margin-bottom:12px">
+            <button data-action="toggle" data-feature="${feature.id}">${feature.enabled ? '禁用入口' : '启用入口'}</button>
+          </div>
+          <table>
+            <thead>
+              <tr><th>版本</th><th>Hash</th><th>发布时间</th><th>操作</th></tr>
+            </thead>
+            <tbody>${rows || '<tr><td colspan="4">暂无发布记录，请上传 bundle</td></tr>'}</tbody>
+          </table>
+          <form class="upload" data-upload="${feature.id}">
+            <input name="version" placeholder="版本号 1.0.0" required />
+            <input name="notes" placeholder="备注（可选）" />
+            <input type="file" name="file" accept=".jsbundle" required />
+            <label><input type="checkbox" name="activate" checked /> 上传后立即上线</label>
+            <button class="primary" type="submit">上传 bundle</button>
+          </form>
+        </div>`;
+    }
+
+    async function loadFeatures() {
+      const data = await api('/api/admin/features');
+      featureList.innerHTML = data.features.map(renderFeature).join('');
+
+      featureList.querySelectorAll('[data-action="toggle"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.dataset.feature;
+          await api(`/api/features/${id}/toggle`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          toast('入口状态已更新');
+          loadFeatures();
+        });
+      });
+
+      featureList.querySelectorAll('[data-action="activate"], [data-action="rollback"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const featureId = btn.dataset.feature;
+          const releaseId = btn.dataset.release;
+          const path = btn.dataset.action === 'rollback'
+            ? `/api/features/${featureId}/rollback`
+            : `/api/features/${featureId}/activate/${releaseId}`;
+
+          if (btn.dataset.action === 'rollback') {
+            if (!confirm('确认回滚到此版本？')) return;
+            await api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ releaseId }) });
+          } else {
+            await api(path, { method: 'POST' });
+          }
+
+          toast(btn.dataset.action === 'rollback' ? '已回滚' : '已切换线上版本');
+          loadFeatures();
+        });
+      });
+
+      featureList.querySelectorAll('form[data-upload]').forEach(form => {
+        form.addEventListener('submit', async event => {
+          event.preventDefault();
+          const featureId = form.dataset.upload;
+          const formData = new FormData(form);
+          formData.append('featureId', featureId);
+          formData.append('activate', form.activate.checked ? 'true' : 'false');
+
+          await api('/api/bundles/upload', { method: 'POST', body: formData });
+          toast('上传成功');
+          form.reset();
+          loadFeatures();
+        });
+      });
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', loadFeatures);
+    loadFeatures().catch(error => {
+      featureList.innerHTML = `<div class="card">加载失败：${error.message}</div>`;
+    });
+  </script>
+</body>
+</html>
