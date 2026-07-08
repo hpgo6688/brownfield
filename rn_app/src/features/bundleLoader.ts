@@ -1,5 +1,5 @@
-import { isFeatureLoaded } from './registerFeature';
 import type { RemoteFeature } from './manifest';
+import { isFeatureLoaded } from './registerFeature';
 
 declare const global: {
   globalEvalWithSourceUrl?: (source: string, sourceUrl: string) => unknown;
@@ -7,26 +7,29 @@ declare const global: {
 
 const loadedBundleUrls = new Set<string>();
 
-function evalBundle(source: string, bundleUrl: string) {
-  if (global.globalEvalWithSourceUrl) {
-    global.globalEvalWithSourceUrl(source, bundleUrl);
-    return;
+function ensureModulesOnlyQuery(bundleUrl: string): string {
+  const url = new URL(bundleUrl);
+  if (!url.searchParams.has('modulesOnly')) {
+    url.searchParams.set('modulesOnly', 'true');
   }
-
-  // eslint-disable-next-line no-eval
-  eval(source);
+  return url.toString();
 }
 
 async function loadFromMetroDevServer(bundleUrl: string): Promise<void> {
   const loadBundleFromServer =
     require('react-native/Libraries/Core/Devtools/loadBundleFromServer').default;
 
-  const url = new URL(bundleUrl);
+  const splitBundleUrl = ensureModulesOnlyQuery(bundleUrl);
+  const url = new URL(splitBundleUrl);
   const bundlePathAndQuery = `${url.pathname.replace(/^\//, '')}${url.search}`;
 
   await loadBundleFromServer(bundlePathAndQuery);
 }
 
+/**
+ * Load an incremental Metro split bundle. Full standalone bundles must not be
+ * eval'd into the same runtime — they duplicate React and break hooks.
+ */
 export async function loadFeatureBundle(feature: RemoteFeature): Promise<void> {
   if (isFeatureLoaded(feature.id) || loadedBundleUrls.has(feature.bundleUrl)) {
     return;
@@ -38,14 +41,9 @@ export async function loadFeatureBundle(feature: RemoteFeature): Promise<void> {
     return;
   }
 
-  const response = await fetch(feature.bundleUrl);
-  if (!response.ok) {
-    throw new Error(`Bundle download failed (${response.status})`);
-  }
-
-  const source = await response.text();
-  evalBundle(source, feature.bundleUrl);
-  loadedBundleUrls.add(feature.bundleUrl);
+  throw new Error(
+    'Static full bundles cannot be eval-loaded in-app. Use built-in features from the main bundle, or start bundle-server with USE_METRO_BUNDLES=true while Metro is running.',
+  );
 }
 
 export function clearLoadedBundles() {

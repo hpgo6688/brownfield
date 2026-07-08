@@ -30,20 +30,18 @@ export default function FeatureHost({
       setScreen(null);
 
       try {
-        const cached = getFeatureComponent(featureId);
-        if (cached) {
-          if (!cancelled) {
-            setScreen(() => cached);
-          }
-          return;
+        const feature = await fetchFeatureById(featureId, manifestUrl);
+
+        let component = getFeatureComponent(featureId);
+
+        // Optional OTA: load incremental split bundle when not in main registry
+        if (!component) {
+          await loadFeatureBundle(feature);
+          component = getFeatureComponent(featureId);
         }
 
-        const feature = await fetchFeatureById(featureId, manifestUrl);
-        await loadFeatureBundle(feature);
-
-        const component = getFeatureComponent(featureId);
         if (!component) {
-          throw new Error(`Bundle loaded but feature "${featureId}" did not register`);
+          throw new Error(`Feature "${featureId}" is not available`);
         }
 
         if (!cancelled) {

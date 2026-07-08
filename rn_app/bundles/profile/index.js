@@ -1,6 +1,6 @@
 import { AppRegistry } from 'react-native';
 import { registerFeature } from '../../src/features/registerFeature';
-import ProfileScreen from '../../screens/ProfileScreen';
+import DynamicProfileScreen from '../../screens/dynamic/DynamicProfileScreen';
 
-registerFeature('profile', 'ProfileScreen', ProfileScreen);
-AppRegistry.registerComponent('ProfileScreen', () => ProfileScreen);
+registerFeature('profile', 'DynamicProfileScreen', DynamicProfileScreen);
+AppRegistry.registerComponent('DynamicProfileScreen', () => DynamicProfileScreen);

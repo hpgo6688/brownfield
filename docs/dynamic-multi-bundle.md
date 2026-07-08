@@ -15,7 +15,9 @@ bundle-server (Node.js)
   GET /bundles/*.jsbundle    → 静态子 bundle（Release / 联调）
 
 rn_app
-  index.js                   → 主 bundle：方案1 注册 HomeScreen 等 + 方案2 注册 FeatureHost
+  screens/                   → 方案1 页面（HomeScreen / ProfileScreen / SettingsScreen）
+  screens/dynamic/           → 方案2 独立页面（DynamicHomeScreen 等）
+  index.js                   → 主 bundle：方案1 注册 + 方案2 dynamicFeatures
   bundles/{home,profile,settings}/index.js → 方案2 子 bundle 入口
   src/features/FeatureHost   → 拉 manifest → 下载 bundle → 渲染页面
 
@@ -100,7 +102,8 @@ curl -X POST http://127.0.0.1:3001/api/features/settings/toggle \
 ## 说明
 
 - **方案 1** 只依赖 Metro / 主 bundle，适合日常开发、server 不可用时的兜底。
-- **方案 2** 主 bundle 由 Brownfield / Metro 加载；子 bundle 由 `FeatureHost` 按需加载，需 bundle-server。
+- **方案 2** 服务端 manifest 控制**入口可见性**；页面组件在主 bundle 注册，与方案 1 共享同一 React 实例（避免 hooks 报错）。
+- 子 bundle 文件用于 OTA / 增量更新；Dev 下通过 Metro `modulesOnly=true` 懒加载，**不要**对完整 bundle 做 `eval`（会重复打包 React）。
 - Debug 默认主 bundle 连 Metro（`preferEmbeddedBundleInDebug = false`）。
 - 模拟器访问本机服务使用 `127.0.0.1`；真机需改为电脑局域网 IP。
 - 多 bundle 使用 deterministic moduleId（见 `metro.config.js`），保证主/子 bundle 模块 ID 一致。

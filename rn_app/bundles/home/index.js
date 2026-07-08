@@ -1,6 +1,6 @@
 import { AppRegistry } from 'react-native';
 import { registerFeature } from '../../src/features/registerFeature';
-import HomeScreen from '../../screens/HomeScreen';
+import DynamicHomeScreen from '../../screens/dynamic/DynamicHomeScreen';
 
-registerFeature('home', 'HomeScreen', HomeScreen);
-AppRegistry.registerComponent('HomeScreen', () => HomeScreen);
+registerFeature('home', 'DynamicHomeScreen', DynamicHomeScreen);
+AppRegistry.registerComponent('DynamicHomeScreen', () => DynamicHomeScreen);

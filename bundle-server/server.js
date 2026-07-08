@@ -24,7 +24,7 @@ function buildManifest(req) {
     .filter(feature => feature.enabled)
     .map(feature => {
       const bundleUrl = USE_METRO_BUNDLES
-        ? `${METRO_HOST}/${feature.metroEntry}.bundle?platform=ios&dev=true&minify=false`
+        ? `${METRO_HOST}/${feature.metroEntry}.bundle?platform=ios&dev=true&minify=false&modulesOnly=true`
         : `${baseUrl}/bundles/${feature.bundleFile}`;
 
       return {
