@@ -16,6 +16,7 @@ private struct LocalRNEntry: Identifiable {
 
 struct ContentView: View {
     @StateObject private var manifestService = BundleManifestService()
+    @StateObject private var devOtaMode = DevOtaModeModel()
 
     private let localEntries: [LocalRNEntry] = [
         LocalRNEntry(id: "home", title: "首页", moduleName: "HomeScreen", icon: "house"),
@@ -87,8 +88,30 @@ struct ContentView: View {
                         }
                     }
                 }
+
+                #if DEBUG
+                Section("开发") {
+                    HStack {
+                        Text("Remote 加载模式")
+                        Spacer()
+                        Text(devOtaMode.isOtaMode ? "OTA" : "Metro")
+                            .font(.caption.bold())
+                            .foregroundStyle(devOtaMode.isOtaMode ? .green : .blue)
+                    }
+                    Text("在导航栏右上角切换 Metro / OTA，作用于全部 Remote 页面。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                #endif
             }
             .navigationTitle("Native Shell")
+            .toolbar {
+                #if DEBUG
+                ToolbarItem(placement: .topBarTrailing) {
+                    DevOtaModeToolbarButton()
+                }
+                #endif
+            }
             .refreshable {
                 await manifestService.load()
             }
@@ -96,5 +119,6 @@ struct ContentView: View {
                 await manifestService.load()
             }
         }
+        .environmentObject(devOtaMode)
     }
 }

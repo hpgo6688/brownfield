@@ -64,7 +64,6 @@ export default function FeatureHost({
   const otaBundleRevision = useOtaBundleRevision();
   const [Screen, setScreen] = useState<ComponentType | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [modeLabel, setModeLabel] = useState<'ota' | 'metro'>('metro');
 
   useEffect(() => {
     let cancelled = false;
@@ -81,9 +80,6 @@ export default function FeatureHost({
       const useOta = await resolveUseOtaMode(devOtaMode);
       if (getForceOtaInDev() !== useOta) {
         setForceOtaInDev(useOta);
-      }
-      if (!cancelled) {
-        setModeLabel(useOta ? 'ota' : 'metro');
       }
 
       if (!useOta) {
@@ -200,13 +196,6 @@ export default function FeatureHost({
           <View style={styles.center}>
             <ActivityIndicator size="large" />
             <Text style={styles.loadingText}>加载中…</Text>
-            {__DEV__ ? (
-              <Text style={styles.modeHint}>
-                {modeLabel === 'ota'
-                  ? 'OTA 模式 · bundles/order|promo split'
-                  : 'Metro 模式 · screens/remote 本地热更新'}
-              </Text>
-            ) : null}
           </View>
         ) : (
           <View style={styles.screen}>
@@ -236,12 +225,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 15,
     color: '#666',
-  },
-  modeHint: {
-    marginTop: 8,
-    fontSize: 12,
-    color: '#94A3B8',
-    textAlign: 'center',
   },
   errorTitle: {
     fontSize: 17,

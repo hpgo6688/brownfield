@@ -4,7 +4,7 @@ import { useSyncExternalStore } from 'react';
  * Runtime Debug toggle: force Remote pages to load from bundle-server OTA
  * instead of the Metro main-bundle fallback.
  *
- * Toggle in native shell navigation bar (RemoteReactNativeScreenView, DEBUG only).
+ * Toggle on native shell home screen toolbar (ContentView, DEBUG only).
  *
  * Metro dev: FeatureHost loads screens/remote/ (OrderScreen, PromoScreen).
  * OTA dev/release: screens/ota/ (ota_OrderScreen, ota_PromoScreen) via bundles/ota_*.
