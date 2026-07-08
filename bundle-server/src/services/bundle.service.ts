@@ -5,8 +5,8 @@ import semver from 'semver';
 import { config } from '../config';
 import { prisma } from '../lib/prisma';
 
-export async function ensureDistDir() {
-  await fs.mkdir(config.distDir, { recursive: true });
+export async function ensureBundlesDir() {
+  await fs.mkdir(config.bundlesDir, { recursive: true });
 }
 
 export function computeSha256(buffer: Buffer): string {
@@ -34,9 +34,9 @@ export async function createReleaseFromUpload(params: {
 
   const hash = computeSha256(buffer);
   const filename = `ota_${featureId}.${version}.ios.jsbundle`;
-  const filePath = path.join(config.distDir, filename);
+  const filePath = path.join(config.bundlesDir, filename);
 
-  await ensureDistDir();
+  await ensureBundlesDir();
   await fs.writeFile(filePath, buffer);
 
   const release = await prisma.bundleRelease.upsert({
@@ -88,6 +88,52 @@ export async function activateRelease(featureId: string, releaseId: string) {
 
 export async function rollbackFeature(featureId: string, releaseId: string) {
   return activateRelease(featureId, releaseId);
+}
+
+export async function deleteRelease(featureId: string, releaseId: string) {
+  const release = await prisma.bundleRelease.findFirst({
+    where: { id: releaseId, featureId },
+  });
+
+  if (!release) {
+    throw new Error('Release not found for this feature');
+  }
+
+  const feature = await prisma.feature.findUnique({ where: { id: featureId } });
+  if (!feature) {
+    throw new Error('Feature not found');
+  }
+
+  if (feature.activeReleaseId === releaseId) {
+    const fallback = await prisma.bundleRelease.findFirst({
+      where: { featureId, id: { not: releaseId } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    await prisma.feature.update({
+      where: { id: featureId },
+      data: { activeReleaseId: fallback?.id ?? null },
+    });
+  }
+
+  await prisma.bundleRelease.delete({ where: { id: releaseId } });
+
+  const filePath = path.join(config.bundlesDir, release.filename);
+  try {
+    await fs.unlink(filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
+    }
+  }
+
+  return prisma.feature.findUniqueOrThrow({
+    where: { id: featureId },
+    include: {
+      activeRelease: true,
+      releases: { orderBy: { createdAt: 'desc' } },
+    },
+  });
 }
 
 export async function toggleFeature(featureId: string, enabled?: boolean) {

@@ -4,6 +4,7 @@ import {
   activateRelease,
   createFeature,
   createReleaseFromUpload,
+  deleteRelease,
   listFeaturesAdmin,
   rollbackFeature,
   toggleFeature,
@@ -124,6 +125,23 @@ export async function registerApiRoutes(app: FastifyInstance) {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Activate failed';
       return reply.code(404).send({ error: message });
+    }
+  });
+
+  app.delete('/api/features/:id/releases/:releaseId', async (request, reply) => {
+    const { id, releaseId } = request.params as { id: string; releaseId: string };
+
+    try {
+      const feature = await deleteRelease(id, releaseId);
+      const { protocol, host } = requestBaseUrl(request);
+      return {
+        feature,
+        manifest: await buildManifest({ protocol, host }),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Delete failed';
+      const status = message.includes('not found') ? 404 : 400;
+      return reply.code(status).send({ error: message });
     }
   });
 

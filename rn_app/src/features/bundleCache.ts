@@ -137,7 +137,37 @@ export async function cachedBundleFileExists(localPath: string): Promise<boolean
 
 const MIN_USABLE_BUNDLE_BYTES = 1500;
 
-export async function isCachedBundleUsable(localPath: string): Promise<boolean> {
+/** Sync validation of downloaded / cached OTA split bundle text. */
+export function validateOtaBundleContent(featureId: string, code: string): boolean {
+  if (code.length < MIN_USABLE_BUNDLE_BYTES) {
+    return false;
+  }
+
+  if (!code.includes('registerFeature')) {
+    return false;
+  }
+
+  if (!code.includes('AppRegistry.registerComponent')) {
+    return false;
+  }
+
+  if (!code.includes('ota_')) {
+    return false;
+  }
+
+  const hasFeatureId =
+    code.includes(`'${featureId}'`) || code.includes(`"${featureId}"`);
+  if (!hasFeatureId) {
+    return false;
+  }
+
+  return /__r\(\d+\);/.test(code);
+}
+
+export async function isCachedBundleUsable(
+  localPath: string,
+  featureId?: string,
+): Promise<boolean> {
   const RNFS = getRNFS();
   if (!RNFS) {
     return false;
@@ -157,7 +187,16 @@ export async function isCachedBundleUsable(localPath: string): Promise<boolean> 
   }
 
   const code = await RNFS.readFile(path, 'utf8');
-  return code.includes('registerFeature') && /__r\(\d+\);/.test(code);
+  if (!featureId) {
+    return (
+      code.includes('registerFeature') &&
+      code.includes('AppRegistry.registerComponent') &&
+      code.includes('ota_') &&
+      /__r\(\d+\);/.test(code)
+    );
+  }
+
+  return validateOtaBundleContent(featureId, code);
 }
 
 export async function readCachedMetadata(
@@ -228,6 +267,69 @@ export async function clearPendingMetadata(featureId: string) {
   if (await RNFS.exists(path)) {
     await RNFS.unlink(path);
   }
+}
+
+export async function clearActiveMetadata(featureId: string) {
+  const RNFS = getRNFS();
+  if (!RNFS) {
+    return;
+  }
+
+  const path = metadataPath(featureId);
+  if (await RNFS.exists(path)) {
+    await RNFS.unlink(path);
+  }
+}
+
+/** Remove active (and matching pending) metadata when the cached file is gone. */
+export async function clearStaleActiveMetadata(featureId: string): Promise<boolean> {
+  const active = await readCachedMetadata(featureId);
+  if (!active) {
+    return false;
+  }
+
+  if (await cachedBundleFileExists(active.localPath)) {
+    return false;
+  }
+
+  await clearActiveMetadata(featureId);
+
+  const pending = await readPendingMetadata(featureId);
+  if (
+    pending &&
+    normalizeLocalPath(pending.localPath) === normalizeLocalPath(active.localPath)
+  ) {
+    await clearPendingMetadata(featureId);
+  }
+
+  return true;
+}
+
+/** Drop active/pending metadata and bundle files that fail OTA validation. */
+export async function clearUnusableActiveMetadata(featureId: string): Promise<boolean> {
+  let cleared = false;
+  const active = await readCachedMetadata(featureId);
+
+  if (active) {
+    const usable = await isCachedBundleUsable(active.localPath, featureId);
+    if (!usable) {
+      await deleteCachedBundle(featureId, active.version);
+      await clearActiveMetadata(featureId);
+      cleared = true;
+    }
+  }
+
+  const pending = await readPendingMetadata(featureId);
+  if (pending) {
+    const usable = await isCachedBundleUsable(pending.localPath, featureId);
+    if (!usable) {
+      await deleteCachedBundle(featureId, pending.version);
+      await clearPendingMetadata(featureId);
+      cleared = true;
+    }
+  }
+
+  return cleared;
 }
 
 export async function writeCachedBundle(

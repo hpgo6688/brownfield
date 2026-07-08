@@ -223,7 +223,8 @@ npm run build && npm start   # 生产
 | http://127.0.0.1:3001/admin | 管理后台 |
 | http://127.0.0.1:3001/api/manifest | manifest JSON |
 
-数据库：`bundle-server/data/bundle-server.db`
+数据库：`bundle-server/data/bundle-server.db`  
+上传 bundle 存储：`bundle-server/data/bundles/`（与数据库同目录，重启后保留）
 
 ### 6.2 环境变量
 
@@ -375,7 +376,7 @@ cd rn_app && npm run verify:ota-scope
 # bundle-server
 cd bundle-server && npm run dev
 cd bundle-server && USE_METRO_BUNDLES=true npm run dev
-cd bundle-server && ./scripts/upload-bundle.sh order 1.0.0 dist/bundles/ota_order.1.0.0.ios.jsbundle
+cd bundle-server && ./scripts/upload-bundle.sh order 1.0.0 ../rn_app/dist/bundles/ota_order.1.0.0.ios.jsbundle
 
 # 共享 Debug 壳
 ./scripts/build-debug-shell.sh

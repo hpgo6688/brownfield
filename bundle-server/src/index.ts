@@ -5,7 +5,7 @@ import fastifyStatic from '@fastify/static';
 import fs from 'fs';
 import path from 'path';
 import { config } from './config';
-import { ensureDistDir } from './services/bundle.service';
+import { ensureBundlesDir } from './services/bundle.service';
 import { registerApiRoutes } from './routes/api';
 import { registerAdminRoutes } from './routes/admin';
 
@@ -13,7 +13,7 @@ async function main() {
   // SQLite path in .env is relative to prisma/schema.prisma → bundle-server/data/
   fs.mkdirSync(path.join(process.cwd(), 'data'), { recursive: true });
 
-  await ensureDistDir();
+  await ensureBundlesDir();
 
   const app = Fastify({ logger: true });
 
@@ -23,7 +23,7 @@ async function main() {
   });
 
   await app.register(fastifyStatic, {
-    root: config.distDir,
+    root: config.bundlesDir,
     prefix: '/bundles/',
     decorateReply: false,
   });

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { ComponentType } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { ensureFeatureCached } from './bundleUpdater';
+import { ensureFeatureCached, formatRemoteBundleError } from './bundleUpdater';
 import { isBundleCacheAvailable } from './bundleCache';
 import {
   clearLoadedBundlesForFeature,
@@ -117,10 +117,15 @@ export default function FeatureHost({
         });
 
         if (!updateResult.bundlePath) {
-          throw new Error(
-            updateResult.error ??
-              'OTA 模式：无可用 bundle。请确认 bundle-server 已启动、已 upload ota_* bundle。',
-          );
+          if (!cancelled) {
+            setError(
+              updateResult.error ??
+                formatRemoteBundleError(featureId),
+            );
+            setScreen(null);
+            setScreenReady(false);
+          }
+          return;
         }
 
         await loadFeatureBundle(updateResult.feature, {
@@ -151,9 +156,9 @@ export default function FeatureHost({
         }
       } catch (loadError) {
         if (!cancelled) {
-          const message =
+          const raw =
             loadError instanceof Error ? loadError.message : 'Unknown load error';
-          setError(message);
+          setError(formatRemoteBundleError(featureId, raw));
           setScreen(null);
           setScreenReady(false);
         }

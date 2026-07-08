@@ -3,6 +3,8 @@ import { sha256 } from 'js-sha256';
 import {
   cachedBundleFileExists,
   clearPendingMetadata,
+  clearStaleActiveMetadata,
+  clearUnusableActiveMetadata,
   deleteCachedBundle,
   isBundleCacheAvailable,
   isCachedBundleUsable,
@@ -10,6 +12,7 @@ import {
   pruneOldVersions,
   readCachedMetadata,
   readPendingMetadata,
+  validateOtaBundleContent,
   writeCachedBundle,
   writeCachedMetadata,
   writePendingMetadata,
@@ -33,6 +36,55 @@ export type UpdateCheckResult = {
   cachedVersion: string | null;
   error?: string;
 };
+
+function fallbackFeature(featureId: string, partial?: Partial<RemoteFeature>): RemoteFeature {
+  return {
+    id: featureId,
+    title: featureId,
+    icon: '',
+    moduleName: '',
+    bundleUrl: '',
+    version: partial?.version ?? '0.0.0',
+    hash: partial?.hash ?? 'sha256:unset',
+    minAppVersion: partial?.minAppVersion ?? '0.0.0',
+    ...partial,
+  };
+}
+
+function failedUpdateResult(
+  featureId: string,
+  message: string,
+  feature?: RemoteFeature,
+  cachedVersion?: string | null,
+): UpdateCheckResult {
+  return {
+    featureId,
+    feature: feature ?? fallbackFeature(featureId),
+    updated: false,
+    bundlePath: null,
+    cachedVersion: cachedVersion ?? null,
+    error: formatRemoteBundleError(featureId, message),
+  };
+}
+
+export function formatRemoteBundleError(featureId: string, cause?: string): string {
+  const base = `远程 bundle 不可用（服务端 ota_${featureId} 可能已删除或未 upload）。请重新 upload 后再试。`;
+  if (!cause) {
+    return base;
+  }
+
+  if (
+    /Download failed \(404\)/i.test(cause) ||
+    /Download failed \(5\d\d\)/i.test(cause) ||
+    /not a valid OTA/i.test(cause) ||
+    /not registered/i.test(cause) ||
+    /Hash mismatch/i.test(cause)
+  ) {
+    return base;
+  }
+
+  return base;
+}
 
 export type RemoteCheckResult = {
   featureId: string;
@@ -85,6 +137,10 @@ async function verifyAndPersistActive(
     throw new Error(`Hash mismatch for feature "${feature.id}"`);
   }
 
+  if (!validateOtaBundleContent(feature.id, body)) {
+    throw new Error(`Downloaded bundle for "${feature.id}" is not a valid OTA split bundle`);
+  }
+
   const localPath = await writeCachedBundle(feature.id, feature.version, body);
   const metadata: CachedFeatureMetadata = {
     featureId: feature.id,
@@ -109,6 +165,10 @@ async function verifyAndPersistPending(
 
   if (expected !== 'unset' && digest !== expected) {
     throw new Error(`Hash mismatch for feature "${feature.id}"`);
+  }
+
+  if (!validateOtaBundleContent(feature.id, body)) {
+    throw new Error(`Downloaded bundle for "${feature.id}" is not a valid OTA split bundle`);
   }
 
   const localPath = await writeCachedBundle(feature.id, feature.version, body);
@@ -170,13 +230,15 @@ export async function checkRemoteFeature(
   const remoteFeature = await fetchFeatureById(featureId, manifestUrl, {
     forceRefresh: true,
   });
+  await clearStaleActiveMetadata(featureId);
+  await clearUnusableActiveMetadata(featureId);
   const active = await readCachedMetadata(featureId);
   const pending = await readPendingMetadata(featureId);
 
   const activeReady =
     active !== null &&
     (await cachedBundleFileExists(active.localPath)) &&
-    (await isCachedBundleUsable(active.localPath));
+    (await isCachedBundleUsable(active.localPath, featureId));
 
   const updateAvailable =
     remoteFeature.hash !== 'sha256:unset' &&
@@ -204,7 +266,7 @@ export async function getPendingUpdate(
     return null;
   }
 
-  if (!(await isCachedBundleUsable(pending.localPath))) {
+  if (!(await isCachedBundleUsable(pending.localPath, featureId))) {
     return null;
   }
 
@@ -254,31 +316,52 @@ export async function ensureFeatureCached(
   const manifestUrl = options?.manifestUrl ?? DEFAULT_MANIFEST_URL;
 
   if (!isBundleCacheAvailable()) {
-    const feature = await fetchFeatureById(featureId, manifestUrl);
-    return {
-      featureId,
-      feature,
-      updated: false,
-      bundlePath: null,
-      cachedVersion: null,
-    };
+    try {
+      const feature = await fetchFeatureById(featureId, manifestUrl);
+      return failedUpdateResult(
+        featureId,
+        'OTA 模式：RNFS 未链接到 BrownfieldLib。请执行 npm run brownfield:package:ios:debug:sim 并 Clean Build。',
+        feature,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Manifest unavailable';
+      return failedUpdateResult(featureId, message);
+    }
   }
+
+  await clearStaleActiveMetadata(featureId);
+  await clearUnusableActiveMetadata(featureId);
 
   const cached = await readCachedMetadata(featureId);
   const cachedFileReady =
     cached !== null &&
     (await cachedBundleFileExists(cached.localPath)) &&
-    (await isCachedBundleUsable(cached.localPath));
+    (await isCachedBundleUsable(cached.localPath, featureId));
 
   if (cachedFileReady && cached) {
-    const feature = await fetchFeatureById(featureId, manifestUrl);
-    return {
-      featureId,
-      feature,
-      updated: false,
-      bundlePath: cached.localPath,
-      cachedVersion: cached.version,
-    };
+    try {
+      const feature = await fetchFeatureById(featureId, manifestUrl);
+      return {
+        featureId,
+        feature,
+        updated: false,
+        bundlePath: cached.localPath,
+        cachedVersion: cached.version,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Manifest unavailable';
+      return {
+        featureId,
+        feature: fallbackFeature(featureId, {
+          version: cached.version,
+          hash: cached.hash,
+        }),
+        updated: false,
+        bundlePath: cached.localPath,
+        cachedVersion: cached.version,
+        error: message,
+      };
+    }
   }
 
   return checkAndUpdateFeature(featureId, options);
@@ -295,20 +378,21 @@ export async function checkAndUpdateFeature(
     const feature = await fetchFeatureById(featureId, manifestUrl);
 
     if (!isBundleCacheAvailable()) {
-      return {
+      return failedUpdateResult(
         featureId,
+        'OTA 模式：RNFS 未链接到 BrownfieldLib。请执行 npm run brownfield:package:ios:debug:sim 并 Clean Build。',
         feature,
-        updated: false,
-        bundlePath: null,
-        cachedVersion: null,
-      };
+      );
     }
+
+    await clearStaleActiveMetadata(featureId);
+    await clearUnusableActiveMetadata(featureId);
 
     const cached = await readCachedMetadata(featureId);
     const cachedFileExists =
       cached !== null && (await cachedBundleFileExists(cached.localPath));
     const cachedFileReady =
-      cachedFileExists && (await isCachedBundleUsable(cached.localPath));
+      cachedFileExists && (await isCachedBundleUsable(cached.localPath, featureId));
     const shouldUpdate =
       options?.force === true ||
       needsUpdate(feature, cached) ||
@@ -331,6 +415,11 @@ export async function checkAndUpdateFeature(
         updated: false,
         bundlePath: cachedFileReady ? cached?.localPath ?? null : null,
         cachedVersion: cached?.version ?? null,
+        ...(cachedFileReady
+          ? {}
+          : {
+              error: formatRemoteBundleError(featureId),
+            }),
       };
     }
 
@@ -343,30 +432,33 @@ export async function checkAndUpdateFeature(
       cachedVersion: metadata.version,
     };
   } catch (error) {
-    const cached = await readCachedMetadata(featureId);
     const message = error instanceof Error ? error.message : 'Update failed';
+    const cached = await readCachedMetadata(featureId);
 
-    if (cached && (await cachedBundleFileExists(cached.localPath))) {
+    if (
+      cached &&
+      (await cachedBundleFileExists(cached.localPath)) &&
+      (await isCachedBundleUsable(cached.localPath, featureId))
+    ) {
       return {
         featureId,
-        feature: {
-          id: featureId,
-          title: featureId,
-          icon: '',
-          moduleName: '',
-          bundleUrl: '',
+        feature: fallbackFeature(featureId, {
           version: cached.version,
           hash: cached.hash,
-          minAppVersion: '0.0.0',
-        },
+        }),
         updated: false,
         bundlePath: cached.localPath,
         cachedVersion: cached.version,
-        error: message,
+        error: formatRemoteBundleError(featureId, message),
       };
     }
 
-    throw error;
+    try {
+      const feature = await fetchFeatureById(featureId, manifestUrl);
+      return failedUpdateResult(featureId, message, feature, cached?.version ?? null);
+    } catch {
+      return failedUpdateResult(featureId, message, undefined, cached?.version ?? null);
+    }
   }
 }
 

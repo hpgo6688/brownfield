@@ -24,7 +24,8 @@ bundles/
 |------|------|
 | `ota_<featureId>/index.js` | split bundle 入口，注册 `ota_*` 模块名 |
 | `ota_<featureId>/screens/` | OTA 专用包装（badge：`OTA · 远程 Bundle`） |
-| 构建产物 | `bundle-server/dist/bundles/ota_<id>.<version>.ios.jsbundle` |
+| 构建产物（RN 侧） | `rn_app/dist/bundles/ota_<id>.<version>.ios.jsbundle` |
+| 服务端存储（upload 后） | `bundle-server/data/bundles/ota_<id>.<version>.ios.jsbundle` |
 
 ## 日常 UI 开发改哪里？
 
@@ -38,8 +39,8 @@ bundles/
 cd rn_app && npm run build:bundles
 
 cd ../bundle-server
-./scripts/upload-bundle.sh order 0.0.2 dist/bundles/ota_order.0.0.2.ios.jsbundle
-./scripts/upload-bundle.sh promo 0.0.2 dist/bundles/ota_promo.0.0.2.ios.jsbundle
+./scripts/upload-bundle.sh order 0.0.2 ../rn_app/dist/bundles/ota_order.0.0.2.ios.jsbundle
+./scripts/upload-bundle.sh promo 0.0.2 ../rn_app/dist/bundles/ota_promo.0.0.2.ios.jsbundle
 ```
 
 验证：原生壳 DEBUG → **OTA** 模式 → 进入对应 Remote 页。

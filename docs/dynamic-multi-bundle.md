@@ -336,13 +336,14 @@ cd ../bundle-server && npm run smoke:e2e
 
 | 能力 | 状态 | 说明 |
 |------|------|------|
-| Node 托管 bundle | ✅ 已有 | `dist/bundles/` + `GET /bundles/*` |
+| Node 托管 bundle | ✅ 已有 | `data/bundles/` + `GET /bundles/*`（重启后保留） |
 | manifest Remote 入口 | ✅ 已有 | `GET /api/manifest` |
 | manifest version/hash | ✅ 已有 | manifest v2 |
 | 上传 + Admin + 回滚 | ✅ 已有 | Prisma `BundleRelease` |
 | 原生 Remote 菜单 | ✅ 已有 | `BundleManifestService` |
 | Dev Metro split | ✅ 已有 | `modulesOnly=true` |
 | 客户端缓存 | ✅ 已有 | `bundleCache.ts` + RNFS；未链接时降级主 bundle |
+| bundle 丢失容错 | ✅ 已有 | 下载/加载失败 → `FeatureHost` 错误页，不闪退 |
 | 版本比对 / 下载 | ✅ 已有 | `bundleUpdater.ts`（staged: check / pending / apply） |
 | OTA polling + 用户确认更新 | ✅ 已有 | `otaUpdatePoller.ts` + `OtaUpdateBanner`（20s） |
 | Release split load | ✅ 已有 | `SplitBundleLoader`（需重打 BrownfieldLib） |
@@ -414,7 +415,7 @@ flowchart TB
     end
 
     subgraph Server["bundle-server"]
-        D --> E["dist/bundles/*.jsbundle"]
+        D --> E["data/bundles/*.jsbundle"]
         D --> F["GET /api/manifest"]
     end
 

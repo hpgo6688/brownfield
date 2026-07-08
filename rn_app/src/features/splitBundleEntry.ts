@@ -3,7 +3,6 @@ import { isFeatureLoadedFromOta } from './registerFeature';
 
 declare const global: {
   __r?: (moduleId: number) => unknown;
-  globalEvalWithSourceUrl?: (source: string, sourceUrl: string) => unknown;
 };
 
 type RNFSModule = {
@@ -38,22 +37,6 @@ async function readBundleCode(bundlePath: string): Promise<string | null> {
   return RNFS.readFile(normalizeLocalPath(bundlePath), 'utf8');
 }
 
-function runFullBundleEval(code: string, path: string): boolean {
-  if (typeof global.globalEvalWithSourceUrl !== 'function') {
-    return false;
-  }
-
-  try {
-    global.globalEvalWithSourceUrl(code, path);
-    return true;
-  } catch (error) {
-    if (__DEV__) {
-      console.warn('[bundleLoader] globalEvalWithSourceUrl failed', error);
-    }
-    return false;
-  }
-}
-
 function runEntryModule(entryModuleId: number): boolean {
   if (typeof global.__r !== 'function') {
     return false;
@@ -74,6 +57,8 @@ function runEntryModule(entryModuleId: number): boolean {
  * Re-run split bundle entry so registerFeature() executes again after
  * clearFeatureRegistration(). Must run AFTER SplitBundleLoader.load() so
  * segment module ids exist in the runtime.
+ *
+ * Does not eval the full bundle — that triggers LogBox errors on invalid files.
  */
 export async function executeSplitBundleEntry(
   bundlePath: string,
@@ -99,11 +84,6 @@ export async function executeSplitBundleEntry(
   const featureId = options?.featureId;
 
   runEntryModule(entryModuleId);
-  if (featureId && isFeatureLoadedFromOta(featureId)) {
-    return true;
-  }
-
-  runFullBundleEval(code, path);
   if (featureId && isFeatureLoadedFromOta(featureId)) {
     return true;
   }

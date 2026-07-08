@@ -548,6 +548,17 @@
       border-color: var(--warn);
     }
 
+    button.danger {
+      background: transparent;
+      color: var(--danger, #dc2626);
+      border-color: #fecaca;
+    }
+
+    button.danger:hover:not(:disabled) {
+      background: #fef2f2;
+      border-color: var(--danger, #dc2626);
+    }
+
     button.ghost {
       background: transparent;
       border-color: transparent;
@@ -567,9 +578,16 @@
 
     .actions {
       display: flex;
-      gap: 8px;
+      gap: 6px;
       flex-wrap: wrap;
       align-items: center;
+    }
+
+    .actions button {
+      padding: 4px 8px;
+      font-size: 12px;
+      border-radius: 6px;
+      font-weight: 500;
     }
 
     /* Table */
@@ -899,6 +917,9 @@
                 <button class="warn" ${isActive ? 'disabled' : ''} data-action="rollback" data-feature="${feature.id}" data-release="${release.id}">
                   回滚
                 </button>
+                <button class="danger" data-action="delete" data-feature="${feature.id}" data-release="${release.id}" data-version="${release.version}">
+                  删除
+                </button>
               </div>
             </td>
           </tr>`;
@@ -1002,6 +1023,23 @@
           }
 
           toast(btn.dataset.action === 'rollback' ? '已回滚' : '已切换线上版本');
+          loadFeatures();
+        });
+      });
+
+      featureDetail.querySelectorAll('[data-action="delete"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const featureId = btn.dataset.feature;
+          const releaseId = btn.dataset.release;
+          const version = btn.dataset.version;
+          const isActive = btn.closest('tr')?.querySelector('.badge.on') != null;
+          const msg = isActive
+            ? `确认删除线上版本 v${version}？将删除 bundle 文件并切换到次新版本（若无则清空线上版本）。`
+            : `确认删除版本 v${version}？将同时删除服务端 bundle 文件。`;
+          if (!confirm(msg)) return;
+
+          await api(`/api/features/${featureId}/releases/${releaseId}`, { method: 'DELETE' });
+          toast(`已删除 v${version}`);
           loadFeatures();
         });
       });

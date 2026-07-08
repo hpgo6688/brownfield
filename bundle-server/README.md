@@ -17,7 +17,8 @@ npm run smoke:manifest
 npm run build && npm start
 ```
 
-Database file: `data/bundle-server.db`.
+Database file: `data/bundle-server.db`.  
+Uploaded bundle files: `data/bundles/` (persist across server restarts; gitignored with `data/`).
 
 ## URLs
 
@@ -31,14 +32,17 @@ Database file: `data/bundle-server.db`.
 curl -X POST http://127.0.0.1:3001/api/bundles/upload \
   -F featureId=order \
   -F version=1.0.0 \
-  -F file=@dist/bundles/order.1.0.0.ios.jsbundle
+  -F file=@../rn_app/dist/bundles/ota_order.1.0.0.ios.jsbundle
 
 curl -X POST http://127.0.0.1:3001/api/features/order/rollback \
   -H 'Content-Type: application/json' \
   -d '{"releaseId":"<id>"}'
 
+# Delete a release (removes DB record + data/bundles file)
+curl -X DELETE http://127.0.0.1:3001/api/features/order/releases/<releaseId>
+
 # CI helper
-./scripts/upload-bundle.sh order 1.0.0 dist/bundles/ota_order.1.0.0.ios.jsbundle
+./scripts/upload-bundle.sh order 1.0.0 ../rn_app/dist/bundles/ota_order.1.0.0.ios.jsbundle
 ```
 
 > Remote entries: `order`, `promo`. Create more via Admin or `POST /api/features`.

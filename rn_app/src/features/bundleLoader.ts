@@ -1,9 +1,14 @@
 import type { RemoteFeature } from './manifest';
 import {
   cachedBundleFileExists,
+  clearActiveMetadata,
+  clearUnusableActiveMetadata,
+  deleteCachedBundle,
+  isCachedBundleUsable,
   normalizeLocalPath,
   readCachedMetadata,
 } from './bundleCache';
+import { formatRemoteBundleError } from './bundleUpdater';
 import { getForceOtaInDev } from './remoteConfig';
 import {
   isFeatureLoaded,
@@ -57,7 +62,17 @@ async function loadFromNativeSplitBundle(
 
   const path = normalizeLocalPath(localPath);
   if (!(await cachedBundleFileExists(path))) {
-    throw new Error(`Cached bundle file not found: ${path}`);
+    throw new Error(formatRemoteBundleError(feature.id, 'Cached bundle file not found'));
+  }
+
+  if (!(await isCachedBundleUsable(path, feature.id))) {
+    const activeMeta = await readCachedMetadata(feature.id);
+    if (activeMeta) {
+      await deleteCachedBundle(feature.id, activeMeta.version);
+      await clearActiveMetadata(feature.id);
+    }
+    await clearUnusableActiveMetadata(feature.id);
+    throw new Error(formatRemoteBundleError(feature.id, 'not a valid OTA split bundle'));
   }
 
   const activeMeta = await readCachedMetadata(feature.id);
@@ -75,9 +90,18 @@ async function loadFromNativeSplitBundle(
 
   await SplitBundleLoader!.load(path, segmentId);
 
-  await executeSplitBundleEntry(path, {
+  const entryOk = await executeSplitBundleEntry(path, {
     featureId: feature.id,
   });
+
+  if (!entryOk && !isFeatureLoadedFromOta(feature.id)) {
+    if (activeMeta) {
+      await deleteCachedBundle(feature.id, activeMeta.version);
+      await clearActiveMetadata(feature.id);
+    }
+    await clearUnusableActiveMetadata(feature.id);
+    throw new Error(formatRemoteBundleError(feature.id, 'not registered'));
+  }
 
   if (!isFeatureLoadedFromOta(feature.id)) {
     syncOtaRegistrationFromCache(feature.id, {
@@ -88,9 +112,12 @@ async function loadFromNativeSplitBundle(
   }
 
   if (!isFeatureLoadedFromOta(feature.id)) {
-    throw new Error(
-      `OTA bundle "${feature.id}" loaded but ota_* component was not registered. Re-upload ota_${feature.id} bundle or reinstall the app.`,
-    );
+    if (activeMeta) {
+      await deleteCachedBundle(feature.id, activeMeta.version);
+      await clearActiveMetadata(feature.id);
+    }
+    await clearUnusableActiveMetadata(feature.id);
+    throw new Error(formatRemoteBundleError(feature.id, 'not registered'));
   }
 
   loadedBundlePaths.set(feature.id, path);
