@@ -6,6 +6,7 @@ import {
   clearStaleActiveMetadata,
   clearUnusableActiveMetadata,
   deleteCachedBundle,
+  deletePendingBundleByPath,
   isBundleCacheAvailable,
   isCachedBundleUsable,
   normalizeLocalPath,
@@ -15,8 +16,10 @@ import {
   validateOtaBundleContent,
   writeCachedBundle,
   writeCachedMetadata,
+  writePendingBundle,
   writePendingMetadata,
   getCachedBundlePath,
+  getPendingBundlePath,
   type CachedFeatureMetadata,
   type PendingFeatureMetadata,
 } from './bundleCache';
@@ -124,12 +127,17 @@ export function needsUpdate(
     return false;
   }
 
-  if (normalizeHash(remote.hash) !== normalizeHash(local.hash)) {
+  // Bootstrap only: same semver — hash-only changes are handled by polling + pending apply.
+  if (bothValid && remote.version === local.version) {
+    return false;
+  }
+
+  if (bothValid && semver.gt(remote.version, local.version)) {
     return true;
   }
 
-  if (bothValid) {
-    return semver.gt(remote.version, local.version);
+  if (normalizeHash(remote.hash) !== normalizeHash(local.hash)) {
+    return true;
   }
 
   return remote.version !== local.version;
@@ -206,7 +214,7 @@ async function verifyAndPersistPending(
     throw new Error(`Downloaded bundle for "${feature.id}" is not a valid OTA split bundle`);
   }
 
-  const localPath = await writeCachedBundle(feature.id, feature.version, body);
+  const localPath = await writePendingBundle(feature.id, feature.version, body);
   const metadata: PendingFeatureMetadata = {
     featureId: feature.id,
     version: feature.version,
@@ -250,7 +258,9 @@ export async function downloadPendingFeature(
   try {
     return await verifyAndPersistPending(feature, body);
   } catch (error) {
-    await deleteCachedBundle(feature.id, feature.version);
+    await deletePendingBundleByPath(
+      getPendingBundlePath(feature.id, feature.version),
+    );
     throw error;
   }
 }
@@ -265,8 +275,6 @@ export async function checkRemoteFeature(
   const remoteFeature = await fetchFeatureById(featureId, manifestUrl, {
     forceRefresh: true,
   });
-  await clearStaleActiveMetadata(featureId);
-  await clearUnusableActiveMetadata(featureId);
   const active = await readCachedMetadata(featureId);
   const pending = await readPendingMetadata(featureId);
 
@@ -310,6 +318,14 @@ export async function getPendingUpdate(
     return pending;
   }
 
+  // Legacy: pending used to overwrite the active bundle path — drop stale pending only.
+  if (
+    normalizeLocalPath(pending.localPath) === normalizeLocalPath(active.localPath)
+  ) {
+    await clearPendingMetadata(featureId);
+    return null;
+  }
+
   if (
     pending.version === active.version &&
     normalizeHash(pending.hash) === normalizeHash(active.hash)
@@ -331,11 +347,20 @@ export async function applyPendingFeature(
 
   clearOtaComponentCache(featureId);
 
+  const activePath = getCachedBundlePath(pending.featureId, pending.version);
+  const pendingPath = normalizeLocalPath(pending.localPath);
+  const RNFS = require('react-native-fs') as {
+    readFile: (path: string, encoding: 'utf8') => Promise<string>;
+  };
+  const body = await RNFS.readFile(pendingPath, 'utf8');
+  await writeCachedBundle(pending.featureId, pending.version, body);
+  await deletePendingBundleByPath(pendingPath);
+
   const active: CachedFeatureMetadata = {
     featureId: pending.featureId,
     version: pending.version,
     hash: pending.hash,
-    localPath: pending.localPath,
+    localPath: activePath,
     installedAt: new Date().toISOString(),
   };
 

@@ -20,6 +20,7 @@ import {
   clearFeatureRegistration,
   getFeatureComponent,
   getFeatureSource,
+  syncOtaRegistrationFromCache,
   waitForFeatureComponent,
 } from './registerFeature';
 import { fetchFeatureById } from './manifest';
@@ -179,13 +180,27 @@ export default function FeatureHost({
           return;
         }
 
+        syncOtaRegistrationFromCache(featureId, {
+          expectedVersion: updateResult.cachedVersion,
+          expectedLocalPath: updateResult.bundlePath,
+        });
+
+        let component = getFeatureComponent(featureId, { otaOnly: true });
+        if (component) {
+          if (!cancelled) {
+            setScreen(() => component);
+            setScreenReady(true);
+          }
+          return;
+        }
+
         await loadFeatureBundle(updateResult.feature, {
           localPath: updateResult.bundlePath,
           force: true,
           otaMode: true,
         });
 
-        let component = await waitForFeatureComponent(featureId, {
+        component = await waitForFeatureComponent(featureId, {
           otaOnly: true,
           timeoutMs: 3000,
         });

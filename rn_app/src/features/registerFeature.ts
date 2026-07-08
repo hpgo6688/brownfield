@@ -76,7 +76,7 @@ export function shouldBustOtaComponentCache(
   if (
     cached.localPath &&
     activeLocalPath &&
-    cached.localPath !== activeLocalPath
+    normalizeLocalPath(cached.localPath) !== normalizeLocalPath(activeLocalPath)
   ) {
     return true;
   }
@@ -138,16 +138,6 @@ export function syncOtaRegistrationFromCache(
     options?.expectedVersion &&
     cached.version &&
     cached.version !== options.expectedVersion
-  ) {
-    return false;
-  }
-
-  if (
-    options?.expectedHash &&
-    cached.hash &&
-    options.expectedHash.startsWith('sha256:') &&
-    cached.hash.startsWith('sha256:') &&
-    options.expectedHash !== cached.hash
   ) {
     return false;
   }

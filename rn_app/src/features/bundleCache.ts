@@ -121,6 +121,10 @@ function bundlePath(featureId: string, version: string) {
   return `${featureDir(featureId)}/${version}.jsbundle`;
 }
 
+function pendingBundlePath(featureId: string, version: string) {
+  return `${featureDir(featureId)}/${version}.pending.jsbundle`;
+}
+
 export async function cachedBundleFileExists(localPath: string): Promise<boolean> {
   const RNFS = getRNFS();
   if (!RNFS) {
@@ -269,6 +273,27 @@ export async function clearPendingMetadata(featureId: string) {
   }
 }
 
+/** Drop pending metadata and its dedicated pending bundle file. */
+export async function clearStalePendingRelease(
+  featureId: string,
+  pending: PendingFeatureMetadata,
+): Promise<void> {
+  await clearPendingMetadata(featureId);
+  await deletePendingBundleByPath(pending.localPath);
+}
+
+export async function deletePendingBundleByPath(localPath: string) {
+  const RNFS = getRNFS();
+  if (!RNFS) {
+    return;
+  }
+
+  const path = normalizeLocalPath(localPath);
+  if (path && (await RNFS.exists(path))) {
+    await RNFS.unlink(path);
+  }
+}
+
 export async function clearActiveMetadata(featureId: string) {
   const RNFS = getRNFS();
   if (!RNFS) {
@@ -323,13 +348,29 @@ export async function clearUnusableActiveMetadata(featureId: string): Promise<bo
   if (pending) {
     const usable = await isCachedBundleUsable(pending.localPath, featureId);
     if (!usable) {
-      await deleteCachedBundle(featureId, pending.version);
       await clearPendingMetadata(featureId);
+      await deletePendingBundleByPath(pending.localPath);
       cleared = true;
     }
   }
 
   return cleared;
+}
+
+export async function writePendingBundle(
+  featureId: string,
+  version: string,
+  contents: string,
+): Promise<string> {
+  const RNFS = getRNFS();
+  if (!RNFS) {
+    throw new Error('Bundle cache unavailable (RNFS native module missing)');
+  }
+
+  await ensureFeatureDir(featureId);
+  const path = pendingBundlePath(featureId, version);
+  await RNFS.writeFile(path, contents, 'utf8');
+  return path;
 }
 
 export async function writeCachedBundle(
@@ -373,7 +414,12 @@ export async function pruneOldVersions(featureId: string, keepVersion: string) {
 
   const entries = await RNFS.readDir(dir);
   const bundleFiles = entries
-    .filter(entry => entry.isFile() && entry.name.endsWith('.jsbundle'))
+    .filter(
+      entry =>
+        entry.isFile() &&
+        entry.name.endsWith('.jsbundle') &&
+        !entry.name.includes('.pending.'),
+    )
     .sort((a, b) => (b.mtime?.getTime() ?? 0) - (a.mtime?.getTime() ?? 0));
 
   const keepPath = bundlePath(featureId, keepVersion);
@@ -396,6 +442,10 @@ export async function pruneOldVersions(featureId: string, keepVersion: string) {
 
 export function getCachedBundlePath(featureId: string, version: string) {
   return bundlePath(featureId, version);
+}
+
+export function getPendingBundlePath(featureId: string, version: string) {
+  return pendingBundlePath(featureId, version);
 }
 
 export async function listCachedFeatureIds(): Promise<string[]> {

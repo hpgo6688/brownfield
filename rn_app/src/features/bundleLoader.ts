@@ -1,9 +1,6 @@
 import type { RemoteFeature } from './manifest';
 import {
   cachedBundleFileExists,
-  clearActiveMetadata,
-  clearUnusableActiveMetadata,
-  deleteCachedBundle,
   isCachedBundleUsable,
   normalizeLocalPath,
   readCachedMetadata,
@@ -68,12 +65,6 @@ async function loadFromNativeSplitBundle(
   }
 
   if (!(await isCachedBundleUsable(path, feature.id))) {
-    const activeMeta = await readCachedMetadata(feature.id);
-    if (activeMeta) {
-      await deleteCachedBundle(feature.id, activeMeta.version);
-      await clearActiveMetadata(feature.id);
-    }
-    await clearUnusableActiveMetadata(feature.id);
     throw new Error(formatRemoteBundleError(feature.id, 'not a valid OTA split bundle'));
   }
 
@@ -82,6 +73,35 @@ async function loadFromNativeSplitBundle(
   const pathChanged =
     previousPath !== undefined && normalizeLocalPath(previousPath) !== path;
   const needsRegistration = !isFeatureLoadedFromOta(feature.id);
+
+  const trySyncFromCache = () => {
+    if (!activeMeta) {
+      return;
+    }
+
+    syncOtaRegistrationFromCache(feature.id, {
+      expectedVersion: activeMeta.version,
+      expectedHash: activeMeta.hash,
+      expectedLocalPath: activeMeta.localPath,
+    });
+  };
+
+  if (!isFeatureLoadedFromOta(feature.id)) {
+    trySyncFromCache();
+  }
+
+  if (isFeatureLoadedFromOta(feature.id)) {
+    loadedBundlePaths.set(feature.id, path);
+    if (activeMeta) {
+      stampOtaComponentCacheVersion(
+        feature.id,
+        activeMeta.version,
+        activeMeta.hash,
+        activeMeta.localPath,
+      );
+    }
+    return;
+  }
 
   if (
     activeMeta &&
@@ -100,15 +120,7 @@ async function loadFromNativeSplitBundle(
   await SplitBundleLoader!.load(path, segmentId);
 
   const syncFromCache = () => {
-    if (!activeMeta) {
-      return;
-    }
-
-    syncOtaRegistrationFromCache(feature.id, {
-      expectedVersion: activeMeta.version,
-      expectedHash: activeMeta.hash,
-      expectedLocalPath: activeMeta.localPath,
-    });
+    trySyncFromCache();
   };
 
   if (!isFeatureLoadedFromOta(feature.id)) {
@@ -126,11 +138,6 @@ async function loadFromNativeSplitBundle(
   }
 
   if (!isFeatureLoadedFromOta(feature.id)) {
-    if (activeMeta) {
-      await deleteCachedBundle(feature.id, activeMeta.version);
-      await clearActiveMetadata(feature.id);
-    }
-    await clearUnusableActiveMetadata(feature.id);
     throw new Error(formatRemoteBundleError(feature.id, 'not registered'));
   }
 

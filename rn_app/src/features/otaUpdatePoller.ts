@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, DevSettings, type AppStateStatus } from 'react-native';
 import type { PendingFeatureMetadata } from './bundleCache';
-import { clearPendingMetadata, deleteCachedBundle } from './bundleCache';
+import { clearStalePendingRelease } from './bundleCache';
 import {
   applyPendingFeature,
   checkRemoteFeature,
@@ -46,13 +46,11 @@ export function useOtaUpdatePoller({
 
   const inFlightRef = useRef(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const dismissedForVersionRef = useRef<string | null>(null);
 
   const refreshPending = useCallback(async () => {
     const pending = await getPendingUpdate(featureId);
     setPendingUpdate(pending);
-    if (pending) {
-      setDismissed(false);
-    }
     return pending;
   }, [featureId]);
 
@@ -80,22 +78,23 @@ export function useOtaUpdatePoller({
       if (existingPending) {
         if (matchesRemoteRelease(existingPending, check.remoteFeature)) {
           setPendingUpdate(existingPending);
-          setDismissed(false);
+          setDismissed(dismissedForVersionRef.current === existingPending.version);
           return;
         }
 
-        await clearPendingMetadata(featureId);
-        await deleteCachedBundle(featureId, existingPending.version);
+        await clearStalePendingRelease(featureId, existingPending);
       }
 
       if (!check.updateAvailable || check.remoteFeature.hash === 'sha256:unset') {
         setPendingUpdate(null);
+        dismissedForVersionRef.current = null;
         return;
       }
 
       setDownloading(true);
       const pending = await downloadPendingFeature(check.remoteFeature);
       setPendingUpdate(pending);
+      dismissedForVersionRef.current = null;
       setDismissed(false);
 
       if (__DEV__) {
@@ -120,7 +119,8 @@ export function useOtaUpdatePoller({
 
   const dismissPrompt = useCallback(() => {
     setDismissed(true);
-  }, []);
+    dismissedForVersionRef.current = pendingUpdate?.version ?? null;
+  }, [pendingUpdate?.version]);
 
   const applyUpdate = useCallback(async () => {
     if (applying) {
@@ -139,6 +139,7 @@ export function useOtaUpdatePoller({
 
       setPendingUpdate(null);
       setActiveVersion(active.version);
+      dismissedForVersionRef.current = null;
       setDismissed(false);
 
       if (__DEV__ && getForceOtaInDev()) {
