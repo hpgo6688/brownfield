@@ -3,6 +3,7 @@ import { sha256 } from 'js-sha256';
 import {
   deleteCachedBundle,
   getCachedBundlePath,
+  isBundleCacheAvailable,
   pruneOldVersions,
   readCachedMetadata,
   writeCachedBundle,
@@ -100,6 +101,17 @@ export async function checkAndUpdateFeature(
   try {
     await fetchManifest(manifestUrl);
     const feature = await fetchFeatureById(featureId, manifestUrl);
+
+    if (!isBundleCacheAvailable()) {
+      return {
+        featureId,
+        feature,
+        updated: false,
+        bundlePath: null,
+        cachedVersion: null,
+      };
+    }
+
     const cached = await readCachedMetadata(featureId);
     const shouldUpdate =
       options?.force === true || needsUpdate(feature, cached);

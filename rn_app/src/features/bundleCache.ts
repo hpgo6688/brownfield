@@ -1,4 +1,4 @@
-import RNFS from 'react-native-fs';
+import { NativeModules } from 'react-native';
 
 export type CachedFeatureMetadata = {
   featureId: string;
@@ -8,11 +8,59 @@ export type CachedFeatureMetadata = {
   installedAt: string;
 };
 
-const CACHE_ROOT = `${RNFS.DocumentDirectoryPath}/rn-bundles`;
+type RNFSModule = {
+  DocumentDirectoryPath: string;
+  mkdir: (path: string) => Promise<void>;
+  exists: (path: string) => Promise<boolean>;
+  readFile: (path: string, encoding: 'utf8') => Promise<string>;
+  writeFile: (path: string, contents: string, encoding: 'utf8') => Promise<void>;
+  unlink: (path: string) => Promise<void>;
+  readDir: (path: string) => Promise<
+    Array<{
+      name: string;
+      path: string;
+      isFile: () => boolean;
+      isDirectory: () => boolean;
+      mtime?: Date | null;
+    }>
+  >;
+};
+
 const MAX_VERSIONS_PER_FEATURE = 2;
 
+let rnfsModule: RNFSModule | null | undefined;
+
+/** RNFSManager must be linked in BrownfieldLib; absent until brownfield package rebuild. */
+export function isBundleCacheAvailable(): boolean {
+  return Boolean(NativeModules.RNFSManager);
+}
+
+function getRNFS(): RNFSModule | null {
+  if (rnfsModule !== undefined) {
+    return rnfsModule;
+  }
+
+  if (!isBundleCacheAvailable()) {
+    rnfsModule = null;
+    return null;
+  }
+
+  // Only require JS after native module exists — avoids NativeEventEmitter crash.
+  const loaded = require('react-native-fs') as RNFSModule & { default?: RNFSModule };
+  rnfsModule = loaded.default ?? loaded;
+  return rnfsModule;
+}
+
+function cacheRoot() {
+  const RNFS = getRNFS();
+  if (!RNFS) {
+    throw new Error('RNFS unavailable');
+  }
+  return `${RNFS.DocumentDirectoryPath}/rn-bundles`;
+}
+
 function featureDir(featureId: string) {
-  return `${CACHE_ROOT}/${featureId}`;
+  return `${cacheRoot()}/${featureId}`;
 }
 
 function metadataPath(featureId: string) {
@@ -24,12 +72,19 @@ function bundlePath(featureId: string, version: string) {
 }
 
 async function ensureFeatureDir(featureId: string) {
+  const RNFS = getRNFS();
+  if (!RNFS) return;
   await RNFS.mkdir(featureDir(featureId));
 }
 
 export async function readCachedMetadata(
   featureId: string,
 ): Promise<CachedFeatureMetadata | null> {
+  const RNFS = getRNFS();
+  if (!RNFS) {
+    return null;
+  }
+
   const path = metadataPath(featureId);
   if (!(await RNFS.exists(path))) {
     return null;
@@ -40,6 +95,11 @@ export async function readCachedMetadata(
 }
 
 export async function writeCachedMetadata(metadata: CachedFeatureMetadata) {
+  const RNFS = getRNFS();
+  if (!RNFS) {
+    throw new Error('Bundle cache unavailable (RNFS native module missing)');
+  }
+
   await ensureFeatureDir(metadata.featureId);
   await RNFS.writeFile(metadataPath(metadata.featureId), JSON.stringify(metadata), 'utf8');
 }
@@ -49,6 +109,11 @@ export async function writeCachedBundle(
   version: string,
   contents: string,
 ): Promise<string> {
+  const RNFS = getRNFS();
+  if (!RNFS) {
+    throw new Error('Bundle cache unavailable (RNFS native module missing)');
+  }
+
   await ensureFeatureDir(featureId);
   const path = bundlePath(featureId, version);
   await RNFS.writeFile(path, contents, 'utf8');
@@ -56,6 +121,11 @@ export async function writeCachedBundle(
 }
 
 export async function deleteCachedBundle(featureId: string, version: string) {
+  const RNFS = getRNFS();
+  if (!RNFS) {
+    return;
+  }
+
   const path = bundlePath(featureId, version);
   if (await RNFS.exists(path)) {
     await RNFS.unlink(path);
@@ -63,6 +133,11 @@ export async function deleteCachedBundle(featureId: string, version: string) {
 }
 
 export async function pruneOldVersions(featureId: string, keepVersion: string) {
+  const RNFS = getRNFS();
+  if (!RNFS) {
+    return;
+  }
+
   const dir = featureDir(featureId);
   if (!(await RNFS.exists(dir))) {
     return;
@@ -96,11 +171,17 @@ export function getCachedBundlePath(featureId: string, version: string) {
 }
 
 export async function listCachedFeatureIds(): Promise<string[]> {
-  if (!(await RNFS.exists(CACHE_ROOT))) {
+  const RNFS = getRNFS();
+  if (!RNFS) {
     return [];
   }
 
-  const entries = await RNFS.readDir(CACHE_ROOT);
+  const root = cacheRoot();
+  if (!(await RNFS.exists(root))) {
+    return [];
+  }
+
+  const entries = await RNFS.readDir(root);
   return entries.filter(entry => entry.isDirectory()).map(entry => entry.name);
 }
 

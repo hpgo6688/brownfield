@@ -5,8 +5,20 @@
  */
 
 const baseUrl = process.env.MANIFEST_URL ?? 'http://127.0.0.1:3001/api/manifest';
+const healthUrl = baseUrl.replace(/\/api\/manifest\/?$/, '/health');
 
 async function main() {
+  try {
+    const health = await fetch(healthUrl);
+    if (!health.ok) {
+      throw new Error(`Server health check failed (${health.status})`);
+    }
+  } catch {
+    throw new Error(
+      `Cannot reach bundle-server at ${healthUrl}. Start it first: cd bundle-server && npm run dev`,
+    );
+  }
+
   const response = await fetch(baseUrl);
   if (!response.ok) {
     throw new Error(`Manifest request failed (${response.status})`);

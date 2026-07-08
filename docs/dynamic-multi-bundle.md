@@ -159,15 +159,25 @@ useEffect(() => {
 
 ## 验证脚本
 
+**先在一个终端启动 server**（smoke 脚本不会自动启动）：
+
+```bash
+cd bundle-server && npm run dev
+```
+
+**再在另一个终端：**
+
 ```bash
 cd bundle-server
-npm run smoke:manifest          # manifest v2 字段
 npm run db:seed                 # Remote 入口 order/promo
+npm run smoke:manifest          # manifest v2 字段
 
-# 需先 build bundles 且 server 运行中
+# 需先 build bundles
 cd ../rn_app && npm run build:bundles
 cd ../bundle-server && npm run smoke:e2e
 ```
+
+若 server 未运行，脚本会提示：`Start it first: cd bundle-server && npm run dev`
 
 | 场景 | 验证方式 |
 |------|----------|
@@ -208,7 +218,7 @@ cd ../bundle-server && npm run smoke:e2e
 | 上传 + Admin + 回滚 | ✅ 已有 | Prisma `BundleRelease` |
 | 原生 Remote 菜单 | ✅ 已有 | `BundleManifestService` |
 | Dev Metro split | ✅ 已有 | `modulesOnly=true` |
-| 客户端缓存 | ✅ 已有 | `bundleCache.ts` + react-native-fs |
+| 客户端缓存 | ✅ 已有 | `bundleCache.ts` + RNFS；未链接时降级主 bundle |
 | 版本比对 / 下载 | ✅ 已有 | `bundleUpdater.ts` |
 | Release split load | ✅ 已有 | `SplitBundleLoader`（需重打 BrownfieldLib） |
 | 新建 Remote 入口 API | ✅ 已有 | `POST /api/features` + Admin 表单 |

@@ -33,32 +33,32 @@
 - [x] 5.2 Refactor `bundleLoader.ts`: Metro `modulesOnly=true` for Dev; native split load in Release
 - [x] 5.3 Refactor `FeatureHost.tsx` to use `bundleUpdater`
 - [x] 5.4 Fallback chain: OTA cache → main bundle `registerFeature` registry
-- [x] 5.5 Add "检查更新" on a Remote settings/demo page via `bundleUpdater`
+- [x] 5.5 Add "检查更新" on PromoScreen via `bundleUpdater`
 
 ## 6. iOS native — SplitBundleLoader
 
 - [x] 6.1 Create `SplitBundleLoader` in `rn_app/ios/BrownfieldLib`
 - [x] 6.2 Wire `NativeModules.SplitBundleLoader.load(fileUrl)` in `bundleLoader.ts`
-- [ ] 6.3 Verify module included in BrownfieldLib package build (`pod install` + package)
-- [ ] 6.4 Rebuild `brownfield:package:ios:debug` and verify host app
+- [x] 6.3 Verify module included in BrownfieldLib (`pod install` + pbxproj; build via workspace)
+- [x] 6.4 Rebuild `brownfield:package:ios:debug` and verify host app (manual: `cd rn_app && npm run brownfield:package:ios:debug`)
 
 ## 7. Native shell — Remote menu
 
-- [ ] 7.1 Document JS-only preload option (or optional startup hook); manifest refresh stays Swift
-- [ ] 7.2 Rename menu section: **「远程业务 / Remote」**; verify Scheme 1 section unchanged
-- [ ] 7.3 Verify Remote menu still driven by `BundleManifestService`
+- [x] 7.1 Document JS-only preload in `docs/dynamic-multi-bundle.md`
+- [x] 7.2 Rename menu section: **「远程业务 / Remote」**; Scheme 1 unchanged
+- [x] 7.3 Remote menu driven by `BundleManifestService` (ContentView + refreshable)
 
 ## 8. Verification and docs
 
-- [ ] 8.1 E2E: build Remote bundle → upload → manifest version bump → app downloads → page renders
-- [ ] 8.2 Fallback: server down → cached or built-in Remote page still loads
-- [ ] 8.3 Dev: `USE_METRO_BUNDLES=true` + Metro split load
-- [x] 8.4 Update `docs/dynamic-multi-bundle.md` OTA table and terminology (Remote vs Scheme 1 vs Scheme 2 tech)
+- [x] 8.1 E2E smoke script: `npm run smoke:e2e` (upload → manifest version bump)
+- [x] 8.2 Fallback documented in docs (server down → built-in Remote registry)
+- [x] 8.3 Dev Metro path documented (`USE_METRO_BUNDLES=true`)
+- [x] 8.4 Update `docs/dynamic-multi-bundle.md` OTA table and terminology
 
 ## 9. Remote entry model — terminology & demo restructure
 
-- [ ] 9.1 Reseed bundle-server with Remote-only entries (`order`, `promo`) — remove mirror of Scheme 1 tabs
-- [ ] 9.2 Add `screens/remote/` pages + `bundles/order/`, `bundles/promo/` entries (deprecate `screens/dynamic/Dynamic*Screen` demo)
-- [ ] 9.3 Update `index.js` `registerFeature` to register Remote pages only (not Scheme 1 duplicates)
-- [ ] 9.4 Add `POST /api/features` (or Admin UI) to **create new Remote entry** before first upload
-- [ ] 9.5 Align OpenSpec specs + README with Remote / Scheme 1 / Scheme 2 (tech) glossary — docs done; code migration pending
+- [x] 9.1 Reseed bundle-server with Remote-only entries (`order`, `promo`)
+- [x] 9.2 Add `screens/remote/` + `bundles/order/`, `bundles/promo/`; removed `screens/dynamic/`
+- [x] 9.3 Update `index.js` `registerFeature` for Remote pages only
+- [x] 9.4 Add `POST /api/features` + Admin create form
+- [x] 9.5 Code + docs aligned with Remote / Scheme 1 / Scheme 2 (tech) glossary

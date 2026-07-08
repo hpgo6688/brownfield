@@ -11,6 +11,12 @@ FEATURE_ID="order"
 VERSION="9.9.9"
 BUNDLE_FILE="${1:-dist/bundles/order.0.0.1.ios.jsbundle}"
 
+if ! curl -sf "${SERVER}/health" >/dev/null; then
+  echo "bundle-server is not running at ${SERVER}" >&2
+  echo "Start it in another terminal: cd bundle-server && npm run dev" >&2
+  exit 1
+fi
+
 if [[ ! -f "$BUNDLE_FILE" ]]; then
   echo "Bundle file not found: $BUNDLE_FILE" >&2
   echo "Run: cd ../rn_app && npm run build:bundles" >&2
