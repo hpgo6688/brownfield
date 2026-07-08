@@ -57,6 +57,11 @@ async function loadFromNativeSplitBundle(
   }
 
   const segmentId = feature.segmentId ?? getFeatureSegmentId(feature.id);
+  if (__DEV__) {
+    console.log(
+      `[SplitBundleLoader] native load feature=${feature.id} segmentId=${segmentId} path=${path}`,
+    );
+  }
   await SplitBundleLoader!.load(path, segmentId);
 }
 
@@ -89,6 +94,11 @@ export async function loadFeatureBundle(
   }
 
   if (!getForceOtaInDev() && isMetroDevUrl(feature.bundleUrl)) {
+    if (__DEV__) {
+      console.log(
+        `[SplitBundleLoader] metro dev load feature=${feature.id} url=${feature.bundleUrl}`,
+      );
+    }
     await loadFromMetroDevServer(feature.bundleUrl);
     loadedBundleKeys.add(loadKey);
     return;

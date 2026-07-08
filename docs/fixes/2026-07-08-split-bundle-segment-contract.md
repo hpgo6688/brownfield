@@ -40,3 +40,22 @@ Two cross-layer contract bugs in `SplitBundleLoader.mm`:
 2. Rebuild + upload OTA bundles if segment contract changed
 3. Restart bundle-server (manifest now includes `segmentId`)
 4. OTA toggle → check update → open Order/Promo
+
+## Follow-up (2026-07-08): TurboModule crash on `self.bridge`
+
+**Symptom**: `-[SplitBundleLoader bridge]: unrecognized selector sent to instance` under New Architecture (`fabric: true`).
+
+**Cause**: Refactor removed explicit `@synthesize bridge = _bridge`. TurboModule `NSInvocation` calls the getter; protocol-only `@property` does not guarantee an implementation.
+
+**Fix**: Restore `__weak RCTBridge *_bridge` + `@synthesize bridge`, `IsBridgelessProxy` logging, and `ActiveBridge()` helper. Keep `registerSegmentWithId:path:` + JS-provided `segmentId`.
+
+## Follow-up (2026-07-08): `NO_LOADER` on bridgeless proxy
+
+**Symptom**: `Split bundle loading is unavailable for this React Native runtime` while RN host is running.
+
+**Cause**: `RCTBridgeProxy` is an `NSProxy`. `respondsToSelector:@selector(registerSegmentWithId:path:)` returns **NO** (signature lookup forwards to empty `RCTCxxBridge`), even though the method is implemented on the proxy. Code rejected before calling the real API.
+
+**Fix**:
+- Detect bridgeless via `respondsToSelector:@selector(object)` and call `registerSegmentWithId:` directly (no `respondsToSelector` gate).
+- Legacy path uses `[RCTCxxBridge registerSegmentWithId:path:]` (not `executeApplicationScript`).
+- Added TurboModule + Codegen: `src/specs/NativeSplitBundleLoader.ts`, `codegenConfig`, `getTurboModule` → `NativeSplitBundleLoaderSpecJSI`.

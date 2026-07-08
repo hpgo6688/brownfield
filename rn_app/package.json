@@ -47,5 +47,18 @@
   },
   "engines": {
     "node": ">= 22.11.0"
+  },
+  "codegenConfig": {
+    "name": "RNSplitBundleLoaderSpec",
+    "type": "modules",
+    "jsSrcsDir": "src/specs",
+    "android": {
+      "javaPackageName": "com.rnapp"
+    },
+    "ios": {
+      "modules": {
+        "SplitBundleLoader": "SplitBundleLoader"
+      }
+    }
   }
 }

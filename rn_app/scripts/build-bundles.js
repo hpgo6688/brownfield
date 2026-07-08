@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
 const { createHash } = require('crypto');
-const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { loadConfig, mergeConfig } = require('metro-config');
+const { buildGraph, runMetro } = require('metro');
+const outputBundle = require('metro/private/shared/output/bundle');
 
 const projectRoot = path.join(__dirname, '..');
 const outputDir = path.join(projectRoot, '..', 'bundle-server', 'dist', 'bundles');
@@ -26,6 +28,56 @@ function sha256File(filePath) {
   return `sha256:${createHash('sha256').update(buffer).digest('hex')}`;
 }
 
+function shouldExcludeFromSplitModule(module, mainModulePaths) {
+  const modulePath = module.path;
+
+  if (
+    modulePath.includes('__prelude__') ||
+    modulePath.includes('/node_modules/metro-runtime/src/polyfills/require.js') ||
+    modulePath.includes('/node_modules/react-native/Libraries/polyfills/')
+  ) {
+    return true;
+  }
+
+  return mainModulePaths.has(modulePath);
+}
+
+async function collectMainModulePaths(config) {
+  const graph = await buildGraph(config, {
+    entries: [path.join(projectRoot, 'index.js')],
+    platform: 'ios',
+    dev: isDev,
+  });
+
+  return new Set([...graph.dependencies.values()].map(module => module.path));
+}
+
+async function buildBundle(metroServer, options) {
+  const bundle = await outputBundle.build(metroServer, options);
+  await outputBundle.save(
+    bundle,
+    {
+      bundleOutput: options.out,
+      bundleEncoding: 'utf8',
+      sourcemapOutput: options.sourceMapOut,
+    },
+    message => console.log(message),
+  );
+}
+
+async function createSplitMetroServer(baseConfig, mainModulePaths) {
+  const splitConfig = mergeConfig(baseConfig, {
+    serializer: {
+      ...baseConfig.serializer,
+      processModuleFilter: module => {
+        return !shouldExcludeFromSplitModule(module, mainModulePaths);
+      },
+    },
+  });
+
+  return runMetro(splitConfig, { watch: false });
+}
+
 const releaseVersion = readVersion();
 
 const featureSegments = JSON.parse(
@@ -33,13 +85,21 @@ const featureSegments = JSON.parse(
 );
 
 const bundles = [
-  { name: 'main', featureId: null, segmentId: null, entry: 'index.js', output: 'main.ios.jsbundle' },
+  {
+    name: 'main',
+    featureId: null,
+    segmentId: null,
+    entry: 'index.js',
+    output: 'main.ios.jsbundle',
+    split: false,
+  },
   {
     name: 'order',
     featureId: 'order',
     segmentId: featureSegments.order,
     entry: 'bundles/order/index.js',
     output: `order.${releaseVersion}.ios.jsbundle`,
+    split: true,
   },
   {
     name: 'promo',
@@ -47,47 +107,76 @@ const bundles = [
     segmentId: featureSegments.promo,
     entry: 'bundles/promo/index.js',
     output: `promo.${releaseVersion}.ios.jsbundle`,
+    split: true,
   },
 ];
 
-fs.mkdirSync(outputDir, { recursive: true });
+async function main() {
+  fs.mkdirSync(outputDir, { recursive: true });
 
-console.log(
-  `Building ${bundles.length} iOS bundles (${isDev ? 'dev' : 'release'}, version ${releaseVersion})…`,
-);
+  console.log(
+    `Building ${bundles.length} iOS bundles (${isDev ? 'dev' : 'release'}, version ${releaseVersion})…`,
+  );
 
-const buildManifest = {
-  version: releaseVersion,
-  builtAt: new Date().toISOString(),
-  bundles: [],
-};
+  const baseConfig = await loadConfig({ projectRoot });
+  const mainModulePaths = await collectMainModulePaths(baseConfig);
+  console.log(`Main bundle module count: ${mainModulePaths.size}`);
 
-for (const bundle of bundles) {
-  const outputPath = path.join(outputDir, bundle.output);
-  const command = [
-    'npx react-native bundle',
-    `--entry-file ${bundle.entry}`,
-    `--bundle-output ${outputPath}`,
-    '--platform ios',
-    `--dev ${isDev}`,
-  ].join(' ');
+  const buildManifest = {
+    version: releaseVersion,
+    builtAt: new Date().toISOString(),
+    bundles: [],
+  };
 
-  console.log(`\n→ ${bundle.name}`);
-  execSync(command, { cwd: projectRoot, stdio: 'inherit' });
+  const mainMetroServer = await runMetro(baseConfig, { watch: false });
 
-  const hash = sha256File(outputPath);
-  buildManifest.bundles.push({
-    featureId: bundle.featureId,
-    segmentId: bundle.segmentId,
-    name: bundle.name,
-    version: bundle.featureId ? releaseVersion : null,
-    file: bundle.output,
-    hash,
-  });
+  try {
+    for (const bundle of bundles) {
+      const outputPath = path.join(outputDir, bundle.output);
+      console.log(`\n→ ${bundle.name}${bundle.split ? ' (split/modulesOnly)' : ''}`);
+
+      const metroServer = bundle.split
+        ? await createSplitMetroServer(baseConfig, mainModulePaths)
+        : mainMetroServer;
+
+      try {
+        await buildBundle(metroServer, {
+          entryFile: bundle.entry,
+          dev: isDev,
+          platform: 'ios',
+          minify: !isDev,
+          modulesOnly: bundle.split,
+          runModule: true,
+          out: outputPath,
+        });
+      } finally {
+        if (bundle.split) {
+          await metroServer.end();
+        }
+      }
+
+      const hash = sha256File(outputPath);
+      buildManifest.bundles.push({
+        featureId: bundle.featureId,
+        segmentId: bundle.segmentId,
+        name: bundle.name,
+        version: bundle.featureId ? releaseVersion : null,
+        file: bundle.output,
+        hash,
+      });
+    }
+  } finally {
+    await mainMetroServer.end();
+  }
+
+  const manifestPath = path.join(outputDir, 'build-manifest.json');
+  fs.writeFileSync(manifestPath, `${JSON.stringify(buildManifest, null, 2)}\n`);
+
+  console.log(`\nDone. Bundles written to ${outputDir}`);
+  console.log(`Build manifest: ${manifestPath}`);
 }
 
-const manifestPath = path.join(outputDir, 'build-manifest.json');
-fs.writeFileSync(manifestPath, `${JSON.stringify(buildManifest, null, 2)}\n`);
-
-console.log(`\nDone. Bundles written to ${outputDir}`);
-console.log(`Build manifest: ${manifestPath}`);
+main().catch(error => {
+  console.error(error);
+  process.exit(1);
+});

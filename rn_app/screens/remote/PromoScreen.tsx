@@ -10,7 +10,7 @@ import {
   checkAndUpdateFeature,
   getCachedFeatureVersion,
 } from '../../src/features/bundleUpdater';
-import { remoteFeatures } from './index';
+import { remoteFeatureIds } from './featureMeta';
 import { RemoteScreenShell } from './RemoteScreenShell';
 
 const PROMOS = [
@@ -35,7 +35,7 @@ export default function PromoScreen() {
     setUpdateMessage(null);
 
     try {
-      const featureIds = Object.keys(remoteFeatures);
+      const featureIds = [...remoteFeatureIds];
       const results = await Promise.all(
         featureIds.map(featureId => checkAndUpdateFeature(featureId)),
       );

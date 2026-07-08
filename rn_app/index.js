@@ -10,7 +10,10 @@ import { registerFeature } from './src/features/registerFeature';
 import HomeScreen from './screens/HomeScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import SettingsScreen from './screens/SettingsScreen';
-import { remoteFeatures } from './screens/remote';
+import {
+  createOfflinePlaceholder,
+  remoteFeatureMeta,
+} from './screens/remote';
 
 // Standalone RN app entry (npm run ios)
 AppRegistry.registerComponent(appName, () => App);
@@ -20,11 +23,15 @@ AppRegistry.registerComponent('HomeScreen', () => HomeScreen);
 AppRegistry.registerComponent('ProfileScreen', () => ProfileScreen);
 AppRegistry.registerComponent('SettingsScreen', () => SettingsScreen);
 
-// Remote business block — Metro fallback (ignored when in-app OTA mode is on)
-Object.entries(remoteFeatures).forEach(([featureId, feature]) => {
-  registerFeature(featureId, feature.moduleName, feature.component, {
-    source: 'main',
-  });
+// Remote business block — lightweight offline placeholders only.
+// Real Order/Promo screens ship in OTA split bundles (not in main bundle).
+Object.entries(remoteFeatureMeta).forEach(([featureId, feature]) => {
+  registerFeature(
+    featureId,
+    feature.moduleName,
+    createOfflinePlaceholder(feature.title),
+    { source: 'main' },
+  );
 });
 
 AppRegistry.registerComponent('FeatureHost', () => FeatureHost);

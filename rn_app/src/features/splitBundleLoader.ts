@@ -1,12 +1,7 @@
-import { NativeModules } from 'react-native';
+import NativeSplitBundleLoader from '../specs/NativeSplitBundleLoader';
 
-type SplitBundleLoaderModule = {
-  load: (fileUrl: string, segmentId: number) => Promise<void>;
-};
-
-export const SplitBundleLoader = NativeModules
-  .SplitBundleLoader as SplitBundleLoaderModule | undefined;
+export const SplitBundleLoader = NativeSplitBundleLoader;
 
 export function isSplitBundleLoaderAvailable(): boolean {
-  return Boolean(SplitBundleLoader?.load);
+  return Boolean(NativeSplitBundleLoader?.load);
 }

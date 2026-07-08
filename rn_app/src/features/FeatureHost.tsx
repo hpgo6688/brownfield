@@ -3,7 +3,8 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import type { ComponentType } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import {
-  remoteFeatures,
+  createOfflinePlaceholder,
+  remoteFeatureMeta,
   type RemoteFeatureId,
 } from '../../screens/remote';
 import { checkAndUpdateFeature } from './bundleUpdater';
@@ -21,11 +22,13 @@ type FeatureHostProps = {
 };
 
 function resolveMainFeatureComponent(featureId: string): ComponentType | null {
-  return (
-    getFeatureComponent(featureId, { otaOnly: false }) ??
-    remoteFeatures[featureId as RemoteFeatureId]?.component ??
-    null
-  );
+  const registered = getFeatureComponent(featureId, { otaOnly: false });
+  if (registered) {
+    return registered;
+  }
+
+  const meta = remoteFeatureMeta[featureId as RemoteFeatureId];
+  return meta ? createOfflinePlaceholder(meta.title) : null;
 }
 
 export default function FeatureHost({
@@ -145,19 +148,25 @@ export default function FeatureHost({
       <View style={styles.root}>
         {error ? (
           <View style={styles.center}>
-            <OtaModeToggle />
             <Text style={styles.errorTitle}>页面加载失败</Text>
             <Text style={styles.errorBody}>{error}</Text>
           </View>
         ) : !Screen ? (
           <View style={styles.center}>
-            <OtaModeToggle />
             <ActivityIndicator size="large" />
             <Text style={styles.loadingText}>加载中…</Text>
+            {__DEV__ ? (
+              <Text style={styles.modeHint}>
+                {forceOtaInDev ? 'OTA 模式 · 走本地缓存 + native' : 'Metro 模式 · 走主 bundle'}
+              </Text>
+            ) : null}
           </View>
         ) : (
-          <Screen />
+          <View style={[styles.screen, __DEV__ && styles.screenWithToggle]}>
+            <Screen />
+          </View>
         )}
+        <OtaModeToggle />
       </View>
     </SafeAreaProvider>
   );
@@ -167,6 +176,12 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#F2F2F7',
+  },
+  screen: {
+    flex: 1,
+  },
+  screenWithToggle: {
+    paddingTop: 40,
   },
   center: {
     flex: 1,
@@ -178,6 +193,12 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 15,
     color: '#666',
+  },
+  modeHint: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#94A3B8',
+    textAlign: 'center',
   },
   errorTitle: {
     fontSize: 17,

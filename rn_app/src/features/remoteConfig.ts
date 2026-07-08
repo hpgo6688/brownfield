@@ -4,7 +4,7 @@ import { useSyncExternalStore } from 'react';
  * Runtime Debug toggle: force Remote pages to load from bundle-server OTA
  * instead of the Metro main-bundle fallback.
  *
- * Toggle in-app via OtaModeToggle (top-left on Remote screens).
+ * Toggle in-app via OtaModeToggle on FeatureHost (top-left on all Remote pages).
  */
 let forceOtaInDev = false;
 const listeners = new Set<() => void>();

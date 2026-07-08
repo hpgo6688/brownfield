@@ -5,22 +5,36 @@
 #import <React/RCTBridgeProxy.h>
 #import <React/RCTLog.h>
 #import <React/RCTUtils.h>
+#import <objc/runtime.h>
+
+#if __has_include(<RNSplitBundleLoaderSpec/RNSplitBundleLoaderSpec.h>)
+#import <RNSplitBundleLoaderSpec/RNSplitBundleLoaderSpec.h>
+#endif
 
 #ifndef RCT_REMOVE_LEGACY_ARCH
 @interface RCTCxxBridge (SplitBundleLoaderPrivate)
-- (BOOL)isValid;
 @end
 #endif
 
 @interface RCTBridgeProxy (SplitBundleLoaderPrivate)
 - (RCTBridgeProxy *)object;
+- (void)registerSegmentWithId:(NSUInteger)segmentId path:(NSString *)path;
 @end
 
-@interface SplitBundleLoader ()
-@end
+static BOOL IsBridgelessProxy(RCTBridge *bridge)
+{
+  if (bridge == nil) {
+    return NO;
+  }
+
+  // NSProxy subclasses report methods via methodSignatureForSelector:, so
+  // respondsToSelector: is unreliable for RCTBridgeProxy. Compare the real class.
+  return [NSStringFromClass(object_getClass(bridge)) isEqualToString:@"RCTBridgeProxy"];
+}
 
 @implementation SplitBundleLoader {
   __weak RCTBridge *_bridge;
+  __weak RCTBridgeProxy *_bridgeProxy;
 }
 
 @synthesize bridge = _bridge;
@@ -32,18 +46,37 @@ RCT_EXPORT_MODULE();
   return NO;
 }
 
-static RCTBridge *BridgeTarget(RCTBridge *bridge)
+- (void)setBridge:(RCTBridge *)bridge
 {
-  return bridge.batchedBridge ?: bridge;
+  _bridge = bridge;
+  if (IsBridgelessProxy(bridge)) {
+    _bridgeProxy = (RCTBridgeProxy *)bridge;
+    NSLog(@"[SplitBundleLoader] setBridge: cached RCTBridgeProxy");
+    return;
+  }
+
+  _bridgeProxy = nil;
+  NSLog(
+      @"[SplitBundleLoader] setBridge: class=%@",
+      bridge != nil ? NSStringFromClass(object_getClass(bridge)) : @"(nil)");
 }
 
-static BOOL IsBridgelessProxy(RCTBridge *bridge)
+static BOOL InstanceImplementsRegisterSegment(id target)
 {
-  return bridge != nil && [bridge respondsToSelector:@selector(object)];
+  return class_getInstanceMethod(object_getClass(target), @selector(registerSegmentWithId:path:)) != NULL;
+}
+
+static void InvokeRegisterSegment(id target, NSUInteger segmentId, NSString *path)
+{
+  [(id)target registerSegmentWithId:segmentId path:path];
 }
 
 static RCTBridge *ActiveBridge(SplitBundleLoader *module)
 {
+  if (module->_bridgeProxy != nil) {
+    return (RCTBridge *)module->_bridgeProxy;
+  }
+
   RCTBridge *bridge = module.bridge;
   if (bridge != nil) {
     return bridge;
@@ -66,19 +99,67 @@ static NSString *NormalizedFilePath(NSString *fileArgument)
   return fileArgument;
 }
 
-RCT_EXPORT_METHOD(load
-                  : (NSString *)fileUrl segmentId
-                  : (nonnull NSNumber *)segmentId resolver
-                  : (RCTPromiseResolveBlock)resolve rejecter
-                  : (RCTPromiseRejectBlock)reject)
+static BOOL RegisterFeatureSegment(
+    SplitBundleLoader *module,
+    RCTBridge *bridge,
+    NSUInteger segmentId,
+    NSString *path,
+    RCTPromiseRejectBlock reject)
 {
-  if (segmentId == nil) {
-    reject(@"EINVAL", @"Missing Metro segment id", nil);
-    return;
+  RCTBridgeProxy *cachedProxy = module->_bridgeProxy;
+  if (cachedProxy != nil) {
+    NSLog(
+        @"[SplitBundleLoader] cached bridgeless proxy registerSegmentWithId:%lu path:%@",
+        (unsigned long)segmentId,
+        path);
+    [cachedProxy registerSegmentWithId:segmentId path:path];
+    return YES;
   }
 
-  int64_t rawSegmentId = segmentId.longLongValue;
-  if (rawSegmentId < 0 || rawSegmentId > UINT32_MAX) {
+  NSLog(@"[SplitBundleLoader] bridge class=%@", NSStringFromClass(object_getClass(bridge)));
+
+  // RCTBridgeProxy (bridgeless): call directly — never use respondsToSelector on NSProxy.
+  if (IsBridgelessProxy(bridge)) {
+    NSLog(
+        @"[SplitBundleLoader] bridgeless proxy registerSegmentWithId:%lu path:%@",
+        (unsigned long)segmentId,
+        path);
+    [(RCTBridgeProxy *)bridge registerSegmentWithId:segmentId path:path];
+    return YES;
+  }
+
+#ifndef RCT_REMOVE_LEGACY_ARCH
+  RCTBridge *batchedBridge = bridge.batchedBridge ?: bridge;
+  if ([batchedBridge isKindOfClass:[RCTCxxBridge class]]) {
+    RCTCxxBridge *cxxBridge = (RCTCxxBridge *)batchedBridge;
+    if (!cxxBridge.valid) {
+      reject(@"NO_BRIDGE", @"React Native bridge is not valid", nil);
+      return YES;
+    }
+
+    NSLog(@"[SplitBundleLoader] legacy registerSegmentWithId:%lu path:%@", (unsigned long)segmentId, path);
+    [cxxBridge registerSegmentWithId:segmentId path:path];
+    return YES;
+  }
+#endif
+
+  if (InstanceImplementsRegisterSegment(bridge)) {
+    NSLog(@"[SplitBundleLoader] registerSegmentWithId:%lu path:%@", (unsigned long)segmentId, path);
+    InvokeRegisterSegment(bridge, segmentId, path);
+    return YES;
+  }
+
+  return NO;
+}
+
+- (void)load:(NSString *)fileUrl
+    segmentId:(double)segmentId
+      resolve:(RCTPromiseResolveBlock)resolve
+       reject:(RCTPromiseRejectBlock)reject
+{
+  NSLog(@"[SplitBundleLoader] load called segmentId=%.0f fileUrl=%@", segmentId, fileUrl);
+
+  if (segmentId < 0 || segmentId > UINT32_MAX) {
     reject(@"EINVAL", @"Metro segment id is out of range", nil);
     return;
   }
@@ -100,37 +181,41 @@ RCT_EXPORT_METHOD(load
     return;
   }
 
-  RCTBridge *target = BridgeTarget(bridge);
-  if (![target respondsToSelector:@selector(registerSegmentWithId:path:)]) {
+  NSUInteger resolvedSegmentId = (NSUInteger)segmentId;
+  if (!RegisterFeatureSegment(self, bridge, resolvedSegmentId, path, reject)) {
+    NSString *bridgeClass = NSStringFromClass(object_getClass(bridge));
     reject(
         @"NO_LOADER",
-        @"Split bundle loading is unavailable for this React Native runtime. Rebuild BrownfieldLib.",
+        [NSString
+            stringWithFormat:
+                @"Split bundle loading is unavailable for this React Native runtime (bridge=%@). Rebuild BrownfieldLib and Clean Build in Xcode.",
+            bridgeClass],
         nil);
     return;
   }
 
-#ifndef RCT_REMOVE_LEGACY_ARCH
-  if ([target isKindOfClass:[RCTCxxBridge class]]) {
-    RCTCxxBridge *cxxBridge = (RCTCxxBridge *)target;
-    if (!cxxBridge.valid) {
-      reject(@"NO_BRIDGE", @"React Native bridge is not valid", nil);
-      return;
-    }
-  }
-#endif
-
-  NSUInteger resolvedSegmentId = (NSUInteger)rawSegmentId;
-  if (IsBridgelessProxy(target)) {
-    RCTLogInfo(
-        @"SplitBundleLoader (bridgeless proxy) registering segment %lu at %@",
-        (unsigned long)resolvedSegmentId,
-        path);
-  } else {
-    RCTLogInfo(@"SplitBundleLoader registering segment %lu at %@", (unsigned long)resolvedSegmentId, path);
-  }
-
-  [target registerSegmentWithId:resolvedSegmentId path:path];
   resolve(nil);
 }
+
+RCT_EXPORT_METHOD(load
+                  : (NSString *)fileUrl segmentId
+                  : (nonnull NSNumber *)segmentId resolver
+                  : (RCTPromiseResolveBlock)resolve rejecter
+                  : (RCTPromiseRejectBlock)reject)
+{
+  [self load:fileUrl segmentId:segmentId.doubleValue resolve:resolve reject:reject];
+}
+
+#ifdef __cplusplus
+- (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
+    (const facebook::react::ObjCTurboModule::InitParams &)params
+{
+#if __has_include(<RNSplitBundleLoaderSpec/RNSplitBundleLoaderSpec.h>)
+  return std::make_shared<facebook::react::NativeSplitBundleLoaderSpecJSI>(params);
+#else
+  return nullptr;
+#endif
+}
+#endif
 
 @end
