@@ -18,6 +18,7 @@ import {
   clearFeatureRegistration,
   getFeatureComponent,
   getFeatureSource,
+  syncOtaRegistrationFromCache,
   waitForFeatureComponent,
 } from './registerFeature';
 
@@ -111,6 +112,10 @@ export default function FeatureHost({
           force: true,
           otaMode: true,
         });
+
+        if (!getFeatureComponent(featureId, { otaOnly: true })) {
+          syncOtaRegistrationFromCache(featureId);
+        }
 
         let component = await waitForFeatureComponent(featureId, {
           otaOnly: true,

@@ -8,9 +8,28 @@ export type FeatureRegistration = {
   source: FeatureSource;
 };
 
+type OtaComponentCacheEntry = {
+  moduleName: string;
+  component: ComponentType;
+};
+
 declare global {
   // eslint-disable-next-line no-var
   var __RN_FEATURE_REGISTRY__: Record<string, FeatureRegistration> | undefined;
+  // eslint-disable-next-line no-var
+  var __OTA_COMPONENT_CACHE__: Record<string, OtaComponentCacheEntry> | undefined;
+}
+
+function rememberOtaComponent(
+  featureId: string,
+  moduleName: string,
+  component: ComponentType,
+) {
+  if (!global.__OTA_COMPONENT_CACHE__) {
+    global.__OTA_COMPONENT_CACHE__ = {};
+  }
+
+  global.__OTA_COMPONENT_CACHE__[featureId] = { moduleName, component };
 }
 
 export function registerFeature(
@@ -23,11 +42,34 @@ export function registerFeature(
     global.__RN_FEATURE_REGISTRY__ = {};
   }
 
+  const source = options?.source ?? 'ota';
+
   global.__RN_FEATURE_REGISTRY__[featureId] = {
     moduleName,
     component,
-    source: options?.source ?? 'ota',
+    source,
   };
+
+  if (source === 'ota') {
+    rememberOtaComponent(featureId, moduleName, component);
+  }
+}
+
+/**
+ * Native split segments stay loaded across mode switches, but
+ * clearFeatureRegistration() wipes JS registry. Rehydrate from cache when
+ * registerSegmentWithId skips re-eval on the second OTA load.
+ */
+export function syncOtaRegistrationFromCache(featureId: string): boolean {
+  const cached = global.__OTA_COMPONENT_CACHE__?.[featureId];
+  if (!cached) {
+    return false;
+  }
+
+  registerFeature(featureId, cached.moduleName, cached.component, {
+    source: 'ota',
+  });
+  return true;
 }
 
 export function getFeatureComponent(

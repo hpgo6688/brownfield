@@ -4,7 +4,11 @@ import {
   normalizeLocalPath,
 } from './bundleCache';
 import { getForceOtaInDev } from './remoteConfig';
-import { isFeatureLoaded, isFeatureLoadedFromOta } from './registerFeature';
+import {
+  isFeatureLoaded,
+  isFeatureLoadedFromOta,
+  syncOtaRegistrationFromCache,
+} from './registerFeature';
 import { getFeatureSegmentId } from './segmentRegistry';
 import { executeSplitBundleEntry } from './splitBundleEntry';
 import { isSplitBundleLoaderAvailable, SplitBundleLoader } from './splitBundleLoader';
@@ -65,6 +69,16 @@ async function loadFromNativeSplitBundle(
   }
   await SplitBundleLoader!.load(path, segmentId);
   await executeSplitBundleEntry(path);
+
+  if (!isFeatureLoadedFromOta(feature.id)) {
+    syncOtaRegistrationFromCache(feature.id);
+  }
+
+  if (!isFeatureLoadedFromOta(feature.id)) {
+    throw new Error(
+      `OTA bundle "${feature.id}" loaded but ota_* component was not registered. Re-upload ota_${feature.id} bundle or reinstall the app.`,
+    );
+  }
 }
 
 /**
