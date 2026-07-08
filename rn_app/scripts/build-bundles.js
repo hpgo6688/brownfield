@@ -30,9 +30,9 @@ function sha256File(filePath) {
 
 function isFeatureOwnedBySplit(modulePath) {
   return (
-    /\/screens\/remote\/(OrderScreen|PromoScreen)\.tsx$/.test(modulePath) ||
+    /\/screens\/ota\/(OrderScreen|PromoScreen)\.tsx$/.test(modulePath) ||
     /\/screens\/remote\/RemoteScreenShell\.tsx$/.test(modulePath) ||
-    /\/bundles\/(order|promo)\//.test(modulePath)
+    /\/bundles\/ota_(order|promo)\//.test(modulePath)
   );
 }
 
@@ -143,19 +143,19 @@ const bundles = [
     split: false,
   },
   {
-    name: 'order',
+    name: 'ota_order',
     featureId: 'order',
     segmentId: featureSegments.order,
-    entry: 'bundles/order/index.js',
-    output: `order.${releaseVersion}.ios.jsbundle`,
+    entry: 'bundles/ota_order/index.js',
+    output: `ota_order.${releaseVersion}.ios.jsbundle`,
     split: true,
   },
   {
-    name: 'promo',
+    name: 'ota_promo',
     featureId: 'promo',
     segmentId: featureSegments.promo,
-    entry: 'bundles/promo/index.js',
-    output: `promo.${releaseVersion}.ios.jsbundle`,
+    entry: 'bundles/ota_promo/index.js',
+    output: `ota_promo.${releaseVersion}.ios.jsbundle`,
     split: true,
   },
 ];

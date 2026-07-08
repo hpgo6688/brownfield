@@ -33,7 +33,7 @@ export async function createReleaseFromUpload(params: {
   }
 
   const hash = computeSha256(buffer);
-  const filename = `${featureId}.${version}.ios.jsbundle`;
+  const filename = `ota_${featureId}.${version}.ios.jsbundle`;
   const filePath = path.join(config.distDir, filename);
 
   await ensureDistDir();

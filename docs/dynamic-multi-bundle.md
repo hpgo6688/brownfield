@@ -41,9 +41,10 @@ bundle-server (Fastify + Prisma)
 
 rn_app
   screens/                   → Scheme 1 核心页
-  screens/remote/            → Remote 业务页（OrderScreen、PromoScreen）
+  screens/remote/            → Remote 业务页（Metro dev：OrderScreen、PromoScreen）
+  screens/ota/               → OTA split bundle 专用页（ota_OrderScreen、ota_PromoScreen）
   index.js                   → 主 bundle：Scheme 1 注册 + Remote registerFeature fallback
-  bundles/{order,promo}/     → Remote 子 bundle 入口
+  bundles/ota_{order,promo}/ → OTA split bundle 入口（输出 ota_*.ios.jsbundle）
   src/features/
     FeatureHost              → Remote 容器：manifest → OTA → 渲染
     bundleUpdater            → 版本比对、下载、缓存
@@ -72,7 +73,7 @@ npm run dev          # db:prepare + 热重载
 | http://127.0.0.1:3001/admin | 管理后台：上传、回滚、启用/禁用入口 |
 | http://127.0.0.1:3001/api/manifest | Remote manifest JSON |
 
-`npm run dev` 会自动 `prisma db push` + seed。数据库：`data/bundle-server.db`。
+`npm run dev` 会自动 `prisma db push` + seed。数据库：`bundle-server/data/bundle-server.db`。
 
 ### 2. 上传与回滚
 
@@ -87,8 +88,9 @@ curl -X POST http://127.0.0.1:3001/api/features/order/rollback \
   -H 'Content-Type: application/json' \
   -d '{"releaseId": "<release-id>"}'
 
-# CI 上传示例
-./scripts/upload-bundle.sh order 1.0.0 dist/bundles/order.1.0.0.ios.jsbundle
+# CI 上传示例（featureId 不变，文件名带 ota_ 前缀）
+./scripts/upload-bundle.sh order 1.0.0 dist/bundles/ota_order.1.0.0.ios.jsbundle
+./scripts/upload-bundle.sh promo 1.0.0 dist/bundles/ota_promo.1.0.0.ios.jsbundle
 ```
 
 ### 3. 开发模式（Metro 热重载 Remote 子 bundle）
@@ -104,6 +106,22 @@ cd bundle-server && USE_METRO_BUNDLES=true npm run dev
 ```
 
 此模式下 manifest 里的 `bundleUrl` 会指向 Metro 的 split bundle 路径，改 `screens/remote/` 可热重载。
+
+### 3.1 DEBUG 模式隔离（Metro vs OTA）
+
+原生壳工具栏可切换 **Metro** / **OTA** 模式（仅 DEBUG）：
+
+| 模式 | 加载路径 | 屏幕来源 | 模块名 |
+|------|----------|----------|--------|
+| **Metro** | Metro 动态 import | `screens/remote/` | `OrderScreen` / `PromoScreen` |
+| **OTA** | manifest → 下载 → split load | `screens/ota/`（打包进 `ota_*.ios.jsbundle`） | `ota_OrderScreen` / `ota_PromoScreen` |
+
+**隔离规则：**
+
+- 打包上传的 bundle 文件名带 `ota_` 前缀：`ota_order.<version>.ios.jsbundle`
+- manifest `featureId` 不变（仍为 `order` / `promo`）
+- 两种模式**不互相 fallback**；切换模式会清除 registry 与已加载 bundle 后重载
+- 重新 upload 后若 OTA 仍显示旧内容，删除 App 沙盒缓存 `DocumentDirectory/rn-bundles/` 或重装 App
 
 ### 4. 静态 bundle 模式（接近 Release）
 
@@ -128,10 +146,11 @@ curl -X POST http://127.0.0.1:3001/api/features/promo/toggle \
 
 1. 在 `rn_app/screens/remote/` 添加页面（**不要**放进 Scheme 1 的 `screens/`）
 2. 在 `screens/remote/index.ts` 的 `remoteFeatures` 注册（主 bundle fallback）
-3. 新建 `rn_app/bundles/<entryId>/index.js` 并 `registerFeature`
-4. 在 Admin 或 `POST /api/features` 注册 Remote 入口（**待实现** create API；当前可改 `prisma/seed.ts`）
-5. 在 `scripts/build-bundles.js` 的 `bundles` 数组加一项
-6. `npm run build:bundles` → Admin 或 `upload-bundle.sh` 上传
+3. 新建 `rn_app/bundles/ota_<entryId>/index.js`，注册 `ota_<ModuleName>` 并 `registerFeature(..., { source: 'ota' })`
+4. 在 `screens/ota/` 添加 OTA 专用页面（勿与 Metro `screens/remote/` 共用）
+5. 在 Admin 或 `POST /api/features` 注册 Remote 入口（**待实现** create API；当前可改 `prisma/seed.ts`）
+6. 在 `scripts/build-bundles.js` 的 `bundles` 数组加一项（output 带 `ota_` 前缀）
+7. `npm run build:bundles` → Admin 或 `upload-bundle.sh` 上传 `ota_<entryId>.*.ios.jsbundle`
 
 ## 迁移到 Remote 模型
 

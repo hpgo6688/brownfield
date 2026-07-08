@@ -2,11 +2,6 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import type { ComponentType } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import {
-  createOfflinePlaceholder,
-  remoteFeatureMeta,
-  type RemoteFeatureId,
-} from '../../screens/remote';
 import { checkAndUpdateFeature } from './bundleUpdater';
 import { isBundleCacheAvailable } from './bundleCache';
 import {
@@ -15,7 +10,6 @@ import {
 } from './bundleLoader';
 import { getPersistedDevOtaMode } from './devOtaModeStore';
 import {
-  allowsMainBundleFallback,
   getForceOtaInDev,
   setForceOtaInDev,
   useOtaBundleRevision,
@@ -46,16 +40,6 @@ async function resolveUseOtaMode(devOtaMode?: boolean): Promise<boolean> {
   return getPersistedDevOtaMode();
 }
 
-function resolveMainFeatureComponent(featureId: string): ComponentType | null {
-  const registered = getFeatureComponent(featureId, { otaOnly: false });
-  if (registered) {
-    return registered;
-  }
-
-  const meta = remoteFeatureMeta[featureId as RemoteFeatureId];
-  return meta ? createOfflinePlaceholder(meta.title) : null;
-}
-
 export default function FeatureHost({
   featureId,
   manifestUrl,
@@ -76,6 +60,10 @@ export default function FeatureHost({
       }
 
       setError(null);
+      setScreen(null);
+
+      clearFeatureRegistration(featureId);
+      clearLoadedBundlesForFeature(featureId);
 
       const useOta = await resolveUseOtaMode(devOtaMode);
       if (getForceOtaInDev() !== useOta) {
@@ -89,26 +77,15 @@ export default function FeatureHost({
           if (!cancelled) {
             setScreen(() => component);
           }
-          return;
         } catch (metroError) {
-          const fallback = resolveMainFeatureComponent(featureId);
-          if (fallback && !cancelled) {
-            setScreen(() => fallback);
-            return;
-          }
-
           if (!cancelled) {
             const message =
               metroError instanceof Error ? metroError.message : 'Unknown load error';
             setError(message);
             setScreen(null);
           }
-          return;
         }
-      }
-
-      if (!cancelled) {
-        setScreen(null);
+        return;
       }
 
       try {
@@ -125,12 +102,9 @@ export default function FeatureHost({
         if (!updateResult.bundlePath) {
           throw new Error(
             updateResult.error ??
-              'OTA 模式：无可用 bundle。请确认 bundle-server 已启动、已 upload，并在活动页点「检查 Remote 更新」。',
+              'OTA 模式：无可用 bundle。请确认 bundle-server 已启动、已 upload ota_* bundle，并在活动页点「检查 Remote 更新」。',
           );
         }
-
-        clearFeatureRegistration(featureId);
-        clearLoadedBundlesForFeature(featureId);
 
         await loadFeatureBundle(updateResult.feature, {
           localPath: updateResult.bundlePath,
@@ -150,7 +124,7 @@ export default function FeatureHost({
         if (!component) {
           const source = getFeatureSource(featureId);
           throw new Error(
-            `OTA 模式：feature "${featureId}" bundle 已加载但未注册组件（source=${source ?? 'none'}，version=${updateResult.cachedVersion ?? '?'}）。请在活动页点「检查 Remote 更新」重新下载 bundle。`,
+            `OTA 模式：feature "${featureId}" bundle 已加载但未注册 ota_* 组件（source=${source ?? 'none'}，version=${updateResult.cachedVersion ?? '?'}）。请重新 upload ota_${featureId} bundle。`,
           );
         }
 
@@ -158,16 +132,6 @@ export default function FeatureHost({
           setScreen(() => component);
         }
       } catch (loadError) {
-        const fallback =
-          allowsMainBundleFallback() && featureId
-            ? resolveMainFeatureComponent(featureId)
-            : null;
-
-        if (fallback && !cancelled) {
-          setScreen(() => fallback);
-          return;
-        }
-
         if (!cancelled) {
           const message =
             loadError instanceof Error ? loadError.message : 'Unknown load error';

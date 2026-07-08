@@ -10,11 +10,11 @@ function resolveSqliteUrl(rawUrl: string): string {
     return rawUrl;
   }
 
-  // DATABASE_URL paths are relative to prisma/schema.prisma
-  const absolutePath = path.resolve(process.cwd(), 'prisma', filePath);
+  // Match Prisma CLI: paths are relative to the bundle-server project root.
+  const absolutePath = path.resolve(process.cwd(), filePath);
   return `file:${absolutePath}`;
 }
 
 export function getDatabaseUrl(): string {
-  return resolveSqliteUrl(process.env.DATABASE_URL ?? 'file:../data/bundle-server.db');
+  return resolveSqliteUrl(process.env.DATABASE_URL ?? 'file:data/bundle-server.db');
 }

@@ -38,7 +38,7 @@ curl -X POST http://127.0.0.1:3001/api/features/order/rollback \
   -d '{"releaseId":"<id>"}'
 
 # CI helper
-./scripts/upload-bundle.sh order 1.0.0 dist/bundles/order.1.0.0.ios.jsbundle
+./scripts/upload-bundle.sh order 1.0.0 dist/bundles/ota_order.1.0.0.ios.jsbundle
 ```
 
 > Remote entries: `order`, `promo`. Create more via Admin or `POST /api/features`.
@@ -48,7 +48,7 @@ curl -X POST http://127.0.0.1:3001/api/features/order/rollback \
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `3001` | Server port |
-| `DATABASE_URL` | `file:../data/bundle-server.db` | Prisma database |
+| `DATABASE_URL` | `file:data/bundle-server.db` | Prisma database (relative to `bundle-server/`) |
 | `USE_METRO_BUNDLES` | `false` | Point manifest URLs to Metro split bundles |
 | `METRO_HOST` | `http://127.0.0.1:8081` | Metro base URL |
 
