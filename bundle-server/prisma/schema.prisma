@@ -7,7 +7,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// RN dynamic feature entry (Scheme 2 page)
+/// RN Remote entry (server-driven business block)
 model Feature {
   id              String          @id
   title           String

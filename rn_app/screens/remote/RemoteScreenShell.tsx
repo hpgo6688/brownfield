@@ -2,11 +2,11 @@ import type { ReactNode } from 'react';
 import { StatusBar, StyleSheet, useColorScheme } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
-type DynamicScreenShellProps = {
+type RemoteScreenShellProps = {
   children: ReactNode;
 };
 
-export function DynamicScreenShell({ children }: DynamicScreenShellProps) {
+export function RemoteScreenShell({ children }: RemoteScreenShellProps) {
   const isDarkMode = useColorScheme() === 'dark';
 
   return (

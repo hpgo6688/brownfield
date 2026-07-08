@@ -1,17 +1,19 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { DynamicScreenShell } from './DynamicScreenShell';
+import { RemoteScreenShell } from './RemoteScreenShell';
 
-export default function DynamicHomeScreen() {
+export default function OrderScreen() {
   return (
-    <DynamicScreenShell>
+    <RemoteScreenShell>
       <View style={styles.content}>
         <View style={styles.hero}>
-          <Text style={styles.badge}>动态 Bundle</Text>
-          <Text style={styles.title}>首页</Text>
-          <Text style={styles.subtitle}>由服务端 manifest 下发的独立页面</Text>
+          <Text style={styles.badge}>Remote · 远程业务</Text>
+          <Text style={styles.title}>订单</Text>
+          <Text style={styles.subtitle}>
+            独立 Remote 入口，由 manifest 控制可见性与 OTA 更新
+          </Text>
         </View>
       </View>
-    </DynamicScreenShell>
+    </RemoteScreenShell>
   );
 }
 
@@ -23,7 +25,7 @@ const styles = StyleSheet.create({
   hero: {
     flex: 1,
     borderRadius: 16,
-    backgroundColor: '#EEF4FF',
+    backgroundColor: '#FFF7ED',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
@@ -31,7 +33,7 @@ const styles = StyleSheet.create({
   badge: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#2563EB',
+    color: '#EA580C',
     marginBottom: 12,
   },
   title: {

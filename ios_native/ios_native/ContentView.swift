@@ -59,11 +59,11 @@ struct ContentView: View {
                     }
                 }
 
-                Section("React Native · 方案2（动态 Bundle）") {
+                Section("React Native · 远程业务（Remote）") {
                     if manifestService.isLoading {
                         HStack {
                             ProgressView()
-                            Text("加载入口配置…")
+                            Text("加载 Remote 入口…")
                                 .foregroundStyle(.secondary)
                         }
                     } else if let errorMessage = manifestService.errorMessage {
@@ -71,13 +71,13 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                             .font(.footnote)
                     } else if manifestService.features.isEmpty {
-                        Text("服务端未返回可用入口")
+                        Text("服务端未返回 Remote 入口")
                             .foregroundStyle(.secondary)
                             .font(.footnote)
                     } else {
                         ForEach(manifestService.features) { feature in
                             NavigationLink {
-                                DynamicReactNativeScreenView(
+                                RemoteReactNativeScreenView(
                                     featureId: feature.id,
                                     title: feature.title
                                 )

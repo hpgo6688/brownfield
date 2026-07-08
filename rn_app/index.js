@@ -10,18 +10,18 @@ import { registerFeature } from './src/features/registerFeature';
 import HomeScreen from './screens/HomeScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import SettingsScreen from './screens/SettingsScreen';
-import { dynamicFeatures } from './screens/dynamic';
+import { remoteFeatures } from './screens/remote';
 
 // Standalone RN app entry (npm run ios)
 AppRegistry.registerComponent(appName, () => App);
 
-// 方案 1: single bundle, multiple moduleNames
+// Scheme 1: core RN — local fixed moduleNames (no manifest / OTA)
 AppRegistry.registerComponent('HomeScreen', () => HomeScreen);
 AppRegistry.registerComponent('ProfileScreen', () => ProfileScreen);
 AppRegistry.registerComponent('SettingsScreen', () => SettingsScreen);
 
-// 方案 2: dynamic bundle features (separate screens from scheme 1)
-Object.entries(dynamicFeatures).forEach(([featureId, feature]) => {
+// Remote business block — fallback registry for offline / first launch
+Object.entries(remoteFeatures).forEach(([featureId, feature]) => {
   registerFeature(featureId, feature.moduleName, feature.component);
 });
 

@@ -43,10 +43,23 @@ Brownfield 的 `ReactNativeBrownfield.shared` 是**单例**——整个 App 共�
 |------|----------|
 | 不同原生入口 → 不同 RN 页面 UI | **单 bundle + 多 moduleName**（最简单） |
 | 按需加载、减小首包体积 | **主 bundle + Split Bundle 懒加载** |
-| 各业务线独立发版 / OTA | **Split Bundle + 远程 bundle** 或 **Re.Pack Module Federation** |
+| 各业务线独立发版 / OTA | **Split Bundle + Remote manifest**（见 [dynamic-multi-bundle.md](./dynamic-multi-bundle.md)）或 Re.Pack |
 | 完全隔离（不同 RN 版本/依赖） | **多个独立 RN 工程 + 多 XCFramework**（成本最高） |
 
-方案 2 的 OTA 热更新设计与路线图见 [dynamic-multi-bundle.md](./dynamic-multi-bundle.md#ota-热更新)。
+### 产品 vs 技术（Remote 与方案编号）
+
+原生壳里常见两组 RN 入口，不要和下面的「方案编号」混用：
+
+| 原生菜单（产品） | 技术实现 | 是否 OTA |
+|------------------|----------|----------|
+| **核心 RN（Scheme 1）** | 单 bundle + 多 `moduleName` | ❌ |
+| **远程业务（Remote entries）** | Split Bundle + manifest + FeatureHost | ✅ 仅 Remote 子 bundle |
+
+文档中的 **方案二** = Split Bundle 技术，用来交付 **Remote 远程业务块**，不是 Scheme 1 的远程副本。
+
+**方案三**（Re.Pack）、**方案四**（多 XCFramework）见下文；Remote OTA **不需要** Re.Pack，除非多团队微前端。
+
+Remote OTA 设计与路线图见 [dynamic-multi-bundle.md](./dynamic-multi-bundle.md#ota-热更新)。
 
 ---
 
@@ -220,6 +233,8 @@ Debug 下 Metro 支持 split bundle：`RCTBundleURLProvider.jsBundleURLForSplitB
 
 ## 方案三：Re.Pack + Module Federation（微前端）
 
+> **注意：** 这是 multi-bundle 文档的 **方案三（Re.Pack）**，与原生菜单里的 **「Remote 远程业务块」** 不是同一概念。Remote OTA 用 **方案二 Split Bundle** 即可，无需 Re.Pack，除非要多团队独立构建/部署。
+
 若目标是**多团队独立开发、独立部署**：
 
 - 用 [Re.Pack](https://re-pack.dev/) 替代 Metro
@@ -266,14 +281,16 @@ rn_profile/  → ProfileBrownfieldLib.xcframework
 - JS 侧拆成 `screens/HomeScreen.tsx` 等
 - 零 brownfield 改造，Debug 热重载不受影响
 
-### 阶段 2 — 需要按需加载或独立 OTA 时
+### 阶段 2 — Remote 远程业务 + OTA
 
-**主 bundle + Split Bundle**
+**主 bundle + Split Bundle + manifest**（交付 Remote 入口，不是 Scheme 1 的远程副本）
 
-1. 扩展 Xcode Build Phase，打出多个 `.jsbundle`
-2. 子 bundle 放进 BrownfieldLib framework resources
-3. 编写 Native Module 封装 split bundle 加载
-4. 原生 push 前先 load，再 `ReactNativeView(moduleName:)`
+1. 扩展 Build Phase，打出 Remote 子 bundle
+2. `bundle-server` manifest + 上传 + OTA
+3. `SplitBundleLoader` + `bundleUpdater` 客户端
+4. 原生 Remote 菜单 + `FeatureHost`
+
+详见 [dynamic-multi-bundle.md](./dynamic-multi-bundle.md)。
 
 ### 阶段 3 — 多团队微前端
 

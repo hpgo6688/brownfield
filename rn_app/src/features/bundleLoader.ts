@@ -1,11 +1,13 @@
 import type { RemoteFeature } from './manifest';
+import { toFileUrl } from './bundleUpdater';
 import { isFeatureLoaded } from './registerFeature';
+import { isSplitBundleLoaderAvailable, SplitBundleLoader } from './splitBundleLoader';
 
 declare const global: {
   globalEvalWithSourceUrl?: (source: string, sourceUrl: string) => unknown;
 };
 
-const loadedBundleUrls = new Set<string>();
+const loadedBundleKeys = new Set<string>();
 
 function ensureModulesOnlyQuery(bundleUrl: string): string {
   const url = new URL(bundleUrl);
@@ -26,26 +28,65 @@ async function loadFromMetroDevServer(bundleUrl: string): Promise<void> {
   await loadBundleFromServer(bundlePathAndQuery);
 }
 
+function isMetroDevUrl(bundleUrl: string): boolean {
+  return __DEV__ && bundleUrl.includes(':8081/');
+}
+
+function isLocalFileUrl(bundleUrl: string): boolean {
+  return bundleUrl.startsWith('file://') || bundleUrl.startsWith('/');
+}
+
+async function loadFromNativeSplitBundle(localPath: string): Promise<void> {
+  if (!isSplitBundleLoaderAvailable()) {
+    throw new Error(
+      'SplitBundleLoader native module is unavailable. Rebuild BrownfieldLib after adding SplitBundleLoader.',
+    );
+  }
+
+  await SplitBundleLoader!.load(toFileUrl(localPath));
+}
+
 /**
- * Load an incremental Metro split bundle. Full standalone bundles must not be
+ * Load an incremental split bundle. Full standalone bundles must not be
  * eval'd into the same runtime — they duplicate React and break hooks.
  */
-export async function loadFeatureBundle(feature: RemoteFeature): Promise<void> {
-  if (isFeatureLoaded(feature.id) || loadedBundleUrls.has(feature.bundleUrl)) {
+export async function loadFeatureBundle(
+  feature: RemoteFeature,
+  options?: { localPath?: string | null },
+): Promise<void> {
+  const localPath = options?.localPath ?? null;
+  const loadKey = localPath
+    ? `${feature.id}:${localPath}`
+    : `${feature.id}:${feature.bundleUrl}`;
+
+  if (isFeatureLoaded(feature.id) && loadedBundleKeys.has(loadKey)) {
     return;
   }
 
-  if (__DEV__ && feature.bundleUrl.includes(':8081/')) {
+  if (isMetroDevUrl(feature.bundleUrl)) {
     await loadFromMetroDevServer(feature.bundleUrl);
-    loadedBundleUrls.add(feature.bundleUrl);
+    loadedBundleKeys.add(loadKey);
     return;
+  }
+
+  if (localPath || isLocalFileUrl(feature.bundleUrl)) {
+    const path = localPath ?? feature.bundleUrl;
+    await loadFromNativeSplitBundle(path);
+    loadedBundleKeys.add(loadKey);
+    return;
+  }
+
+  if (__DEV__) {
+    throw new Error(
+      'Remote static bundles cannot be eval-loaded in-app. Use built-in features from the main bundle, or start bundle-server with USE_METRO_BUNDLES=true while Metro is running.',
+    );
   }
 
   throw new Error(
-    'Static full bundles cannot be eval-loaded in-app. Use built-in features from the main bundle, or start bundle-server with USE_METRO_BUNDLES=true while Metro is running.',
+    `Feature "${feature.id}" has no cached OTA bundle. Download via bundleUpdater first.`,
   );
 }
 
 export function clearLoadedBundles() {
-  loadedBundleUrls.clear();
+  loadedBundleKeys.clear();
 }

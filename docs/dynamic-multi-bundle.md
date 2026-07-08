@@ -1,468 +1,342 @@
-# Dynamic Multi-Bundle
+# Remote RN · 远程业务块（Split Bundle + OTA）
 
-服务端控制 RN 动态入口（**方案 2**）。与 **方案 1**（单 Bundle + 多 moduleName）在原生壳中共存，菜单分两组。
+服务端配置 **Remote 入口**（远程 RN 业务块），支持 manifest 增删、子 bundle 按需加载与 OTA 热更新。与 **Scheme 1 核心 RN**（本地固定页面）在原生壳中共存，菜单分两组。
 
-| 分组 | 方案 | 说明 |
+> **术语：** 本文档中的 **「方案 2」** 仅指 **Split Bundle + manifest + FeatureHost** 这套**技术实现**，不是菜单上的第二组页面名称。产品上第二组应称为 **「远程业务 / Remote entries」**。
+
+## 术语对照
+
+| 名称 | 层级 | 含义 |
 |------|------|------|
-| React Native · 方案1（单 Bundle） | 方案 1 | 主 bundle 内直接 `moduleName`，无需 bundle-server |
-| React Native · 方案2（动态 Bundle） | 方案 2 | manifest 控入口，按需加载子 bundle |
+| **Scheme 1 · 核心 RN** | 产品 | 本地固定入口：`HomeScreen` / `ProfileScreen` / `SettingsScreen`。主 bundle 直接 `moduleName`，**不走 manifest / OTA** |
+| **Remote entry · 远程入口** | 产品 | 服务端配置的 RN 业务页（目标：`order`、`promo` 等）。manifest 控制可见性、版本、bundle URL，**可 OTA** |
+| **Scheme 2 · Split Bundle** | 技术 | 在同一 Brownfield Runtime 内 lazy load 子 bundle + `FeatureHost` + OTA，**用来交付 Remote 入口** |
+| **multi-bundle 方案三** | 技术 | Re.Pack Module Federation — **不在当前范围** |
+| **multi-bundle 方案四** | 技术 | 多 RN 工程 / 多 XCFramework — **不在当前范围**（除非 Remote 业务需要不同 RN 版本） |
+
+**关键规则：**
+
+1. OTA 只作用于 **Remote 入口**，不影响 Scheme 1 核心页
+2. Remote 入口**不必**与 Scheme 1 一一对应（不是「远程版首页」）
+3. Remote 与 Scheme 1 共用 **同一个** `rn_app`、同一个 BrownfieldLib、同一个 JS Runtime
+
+### 原生壳菜单（目标形态）
+
+```
+Native Shell
+├── 原生页面
+├── React Native · 核心 RN（Scheme 1）     ← 本地固定
+└── React Native · 远程业务（Remote）      ← manifest 动态 + OTA
+```
+
+> **Demo 技术债：** 已迁移至 `screens/remote/`（`order`、`promo`）。旧 `screens/dynamic/Dynamic*` 镜像页面已移除。
 
 ## 架构
 
 ```
-bundle-server (Node.js)
-  GET /api/manifest          → 返回启用的 feature 列表 + bundleUrl
-  GET /bundles/*.jsbundle    → 静态子 bundle（Release / 联调）
+bundle-server (Fastify + Prisma)
+  GET /api/manifest          → 启用的 Remote 入口 + version/hash/bundleUrl
+  POST /api/bundles/upload   → 上传子 bundle，更新 active release
+  GET /bundles/*.jsbundle    → 静态子 bundle
 
 rn_app
-  screens/                   → 方案1 页面（HomeScreen / ProfileScreen / SettingsScreen）
-  screens/dynamic/           → 方案2 独立页面（DynamicHomeScreen 等）
-  index.js                   → 主 bundle：方案1 注册 + 方案2 dynamicFeatures
-  bundles/{home,profile,settings}/index.js → 方案2 子 bundle 入口
-  src/features/FeatureHost   → 拉 manifest → 下载 bundle → 渲染页面
+  screens/                   → Scheme 1 核心页
+  screens/remote/            → Remote 业务页（OrderScreen、PromoScreen）
+  index.js                   → 主 bundle：Scheme 1 注册 + Remote registerFeature fallback
+  bundles/{order,promo}/     → Remote 子 bundle 入口
+  src/features/
+    FeatureHost              → Remote 容器：manifest → OTA → 渲染
+    bundleUpdater            → 版本比对、下载、缓存
+    bundleCache              → 沙盒持久化
+    bundleLoader             → Dev Metro split / Release SplitBundleLoader
 
 ios_native
-  LocalReactNativeScreenView   → 方案1：直接 moduleName
-  DynamicReactNativeScreenView → 方案2：FeatureHost + featureId
-  BundleManifestService        → 方案2 菜单动态读取 manifest
+  LocalReactNativeScreenView     → Scheme 1：直接 moduleName
+  DynamicReactNativeScreenView   → [deprecated alias] RemoteReactNativeScreenView
+  RemoteReactNativeScreenView    → Remote：FeatureHost + featureId
+  BundleManifestService        → Remote 菜单动态读取 manifest
 ```
 
 ## 快速开始
 
-### 1. 启动 bundle-server（Fastify + Prisma + SQLite）
-
-技术栈：**TypeScript · Fastify · Prisma · SQLite**（零配置本地开发；生产可改 `DATABASE_URL` 为 PostgreSQL）
+### 1. 启动 bundle-server
 
 ```bash
 cd bundle-server
 npm install
-npm run db:push    # 初始化 SQLite
-npm run db:seed    # 写入 home / profile / settings 三个 feature
-npm run dev        # 开发热重载
-# 或 npm run build && npm start
+npm run dev          # db:prepare + 热重载
 ```
 
 | 地址 | 说明 |
 |------|------|
-| http://127.0.0.1:3001/admin | **管理后台**：上传 bundle、查看版本、回滚 |
-| http://127.0.0.1:3001/api/manifest | 移动端 manifest JSON |
+| http://127.0.0.1:3001/admin | 管理后台：上传、回滚、启用/禁用入口 |
+| http://127.0.0.1:3001/api/manifest | Remote manifest JSON |
 
-### 2. 管理后台：上传与回滚
+`npm run dev` 会自动 `prisma db push` + seed。数据库：`data/bundle-server.db`。
+
+### 2. 上传与回滚
 
 1. 打开 `/admin`
-2. 选择 feature，填写 semver 版本号，上传 `.jsbundle`
-3. 勾选「上传后立即上线」或稍后在历史版本里点 **设为线上** / **回滚到此版本**
-4. 移动端下拉刷新菜单或重新进入 Scheme 2 页面即可拉新 manifest
+2. 选择 Remote 入口，填写 semver，上传 `.jsbundle`
+3. 勾选「上传后立即上线」，或在历史版本里 **设为线上** / **回滚**
+4. 原生壳下拉刷新 Remote 菜单；进入页面时 `FeatureHost` 拉 OTA
 
 ```bash
-# API 回滚示例
-curl -X POST http://127.0.0.1:3001/api/features/home/rollback \
+# 回滚示例（目标 entryId：order）
+curl -X POST http://127.0.0.1:3001/api/features/order/rollback \
   -H 'Content-Type: application/json' \
   -d '{"releaseId": "<release-id>"}'
+
+# CI 上传示例
+./scripts/upload-bundle.sh order 1.0.0 dist/bundles/order.1.0.0.ios.jsbundle
 ```
 
-### 3. 开发模式（Metro 热重载子 bundle）
+### 3. 开发模式（Metro 热重载 Remote 子 bundle）
 
 ```bash
 # 终端 1 — Metro
 cd rn_app && npm start
 
-# 终端 2 — bundle-server（指向 Metro）
-cd bundle-server
-USE_METRO_BUNDLES=true npm start
+# 终端 2 — bundle-server 指向 Metro
+cd bundle-server && USE_METRO_BUNDLES=true npm run dev
 
 # 终端 3 — Xcode Debug Run ios_native
 ```
 
-此模式下 manifest 里的 `bundleUrl` 会指向 Metro 的 split bundle 路径，改 `screens/dynamic/` 可热重载。
+此模式下 manifest 里的 `bundleUrl` 会指向 Metro 的 split bundle 路径，改 `screens/remote/` 可热重载。
 
 ### 4. 静态 bundle 模式（接近 Release）
 
 ```bash
-# 构建全部 bundle 到 bundle-server/dist/bundles/
-cd rn_app
-npm run build:bundles
-
-# 启动静态服务
-cd ../bundle-server
-npm start
-
-# Xcode Run（Debug 连 Metro 主 bundle + 静态子 bundle，或 Release 全静态）
+cd rn_app && npm run build:bundles    # 输出 build-manifest.json + hash
+cd ../bundle-server && npm run dev
 ```
 
-### 5. 服务端控制入口
+### 5. 服务端控制 Remote 入口可见性
 
-在 **Admin 后台** 点击「禁用入口 / 启用入口」，或调用 API：
+Admin 禁用入口，或：
 
 ```bash
-curl -X POST http://127.0.0.1:3001/api/features/settings/toggle \
+curl -X POST http://127.0.0.1:3001/api/features/promo/toggle \
   -H 'Content-Type: application/json' \
   -d '{"enabled": false}'
 ```
 
-下拉刷新原生壳菜单即可看到变化。
+下拉刷新原生壳 Remote 菜单即可。
 
-## 新增一个 RN 页面（方案 2）
+## 新增一个 Remote 入口
 
-1. 在 `rn_app/screens/dynamic/` 添加页面组件（不要用方案 1 的 `screens/`）
-2. 在 `screens/dynamic/index.ts` 的 `dynamicFeatures` 里注册
-3. 新建 `rn_app/bundles/<id>/index.js` 并 `registerFeature`
-4. 在 Admin 后台或 `prisma/seed.ts` 注册新 feature（或通过 Prisma 直接插入）
-5. 在 `rn_app/scripts/build-bundles.js` 的 `bundles` 数组里加一项
-6. `npm run build:bundles`，然后在 `/admin` 上传
+1. 在 `rn_app/screens/remote/` 添加页面（**不要**放进 Scheme 1 的 `screens/`）
+2. 在 `screens/remote/index.ts` 的 `remoteFeatures` 注册（主 bundle fallback）
+3. 新建 `rn_app/bundles/<entryId>/index.js` 并 `registerFeature`
+4. 在 Admin 或 `POST /api/features` 注册 Remote 入口（**待实现** create API；当前可改 `prisma/seed.ts`）
+5. 在 `scripts/build-bundles.js` 的 `bundles` 数组加一项
+6. `npm run build:bundles` → Admin 或 `upload-bundle.sh` 上传
+
+## 迁移到 Remote 模型
+
+| 之前（demo） | 当前 |
+|-------------|------|
+| seed: `home` / `profile` / `settings` | seed: `order` / `promo` |
+| `screens/dynamic/Dynamic*Screen` | `screens/remote/OrderScreen` 等 |
+| 菜单「方案2（动态 Bundle）」 | 菜单「远程业务（Remote）」 |
+
+## App 启动预加载（可选）
+
+**默认：** 仅 Swift `BundleManifestService` 在 `.task` / 下拉刷新时拉 manifest，控制 Remote **菜单**。
+
+**可选 JS 预加载：** 在任意已加载的 RN 页面（如 Scheme 1 首页或 Remote 页）调用：
+
+```typescript
+import { preloadFeatures } from './src/features/bundleUpdater';
+
+useEffect(() => {
+  preloadFeatures(['order', 'promo']);
+}, []);
+```
+
+无需原生改动；`FeatureHost` 进页时仍会 `checkAndUpdateFeature`。原生 startup hook 非必须。
+
+## 验证脚本
+
+```bash
+cd bundle-server
+npm run smoke:manifest          # manifest v2 字段
+npm run db:seed                 # Remote 入口 order/promo
+
+# 需先 build bundles 且 server 运行中
+cd ../rn_app && npm run build:bundles
+cd ../bundle-server && npm run smoke:e2e
+```
+
+| 场景 | 验证方式 |
+|------|----------|
+| 8.1 上传后 manifest 版本 bump | `npm run smoke:e2e` |
+| 8.2 服务端不可用 fallback | 停 server，进 Remote 页应显示主 bundle 内置页 |
+| 8.3 Dev Metro split | `USE_METRO_BUNDLES=true npm run dev` + Metro |
 
 ## 关键文件
 
 | 文件 | 说明 |
 |------|------|
-| `bundle-server/prisma/schema.prisma` | Feature / BundleRelease 数据模型 |
-| `bundle-server/src/index.ts` | Fastify 入口 |
-| `bundle-server/src/admin/index.html` | 管理后台 UI（上传、回滚） |
-| `bundle-server/src/services/manifest.service.ts` | manifest 组装（含 version/hash） |
+| `bundle-server/prisma/schema.prisma` | Remote 入口 + 版本历史 |
+| `bundle-server/src/services/manifest.service.ts` | manifest v2（version/hash） |
 | `bundle-server/src/services/bundle.service.ts` | 上传、激活、回滚 |
-| `rn_app/src/features/FeatureHost.tsx` | RN 动态加载容器 |
-| `rn_app/screens/dynamic/` | 方案 2 独立页面（与方案 1 分离） |
-| `rn_app/src/features/bundleLoader.ts` | 下载并加载子 bundle（Dev: Metro split） |
-| `ios_native/ios_native/BundleManifestService.swift` | 原生拉 manifest、动态菜单 |
+| `bundle-server/scripts/smoke-manifest.js` | manifest v2 冒烟测试 |
+| `rn_app/src/features/bundleUpdater.ts` | OTA 比对 / 下载 / 缓存 |
+| `rn_app/src/features/bundleCache.ts` | 沙盒路径与 metadata |
+| `rn_app/src/features/bundleLoader.ts` | Dev Metro / Release SplitBundleLoader |
+| `rn_app/src/features/FeatureHost.tsx` | Remote 页面容器 |
+| `rn_app/ios/BrownfieldLib/SplitBundleLoader.mm` | Release split load |
+| `ios_native/.../BundleManifestService.swift` | Remote 菜单 |
 
 ---
 
 ## OTA 热更新
 
-方案 2 的最终目标是：**RN 子 bundle 打包后上传到 Node 服务，移动端自动拉 manifest、比对版本、下载并加载新 bundle**，无需发版原生 App。
+**目标：** Remote 子 bundle 打包上传到 Node 服务 → 移动端拉 manifest → 比对版本 → 下载 → 校验 hash → 沙盒缓存 → split load，**无需 App Store 发版**。
 
-> **当前状态：** 服务端已支持 manifest v2、上传、Admin 管理、版本回滚（Fastify + Prisma）。移动端 **版本比对、本地缓存、Release split 加载** 仍待实现。
+> **当前状态：** 服务端 manifest v2、上传、Admin、回滚已就绪。客户端 `bundleCache` / `bundleUpdater` / `SplitBundleLoader` 已实现；**Remote 模型重构**（§9）与 BrownfieldLib 重打包验证仍进行中。
 
 ### 能力对照
 
 | 能力 | 状态 | 说明 |
 |------|------|------|
-| Node 服务托管 bundle | ✅ 已有 | `bundle-server/dist/bundles/` + `GET /bundles/*.jsbundle` |
-| manifest 动态入口 | ✅ 已有 | `GET /api/manifest` 控制显示哪些页面 |
-| 移动端拉 manifest | ✅ 已有 | `BundleManifestService` + `FeatureHost` |
-| Dev 增量 bundle | ✅ 已有 | Metro `modulesOnly=true` |
-| manifest 版本字段 | ✅ 已有 | manifest v2 含 `version` / `hash` / `minAppVersion` |
-| 上传 API + Admin | ✅ 已有 | `POST /api/bundles/upload` + `/admin` 管理页 |
-| 版本回滚 | ✅ 已有 | Admin / `POST /api/features/:id/rollback` |
-| 本地缓存 | ❌ 待做 | 移动端沙盒持久化 bundle |
-| Release 热加载 | ❌ 待做 | Native `loadSplitBundle`，禁止完整 bundle `eval` |
+| Node 托管 bundle | ✅ 已有 | `dist/bundles/` + `GET /bundles/*` |
+| manifest Remote 入口 | ✅ 已有 | `GET /api/manifest` |
+| manifest version/hash | ✅ 已有 | manifest v2 |
+| 上传 + Admin + 回滚 | ✅ 已有 | Prisma `BundleRelease` |
+| 原生 Remote 菜单 | ✅ 已有 | `BundleManifestService` |
+| Dev Metro split | ✅ 已有 | `modulesOnly=true` |
+| 客户端缓存 | ✅ 已有 | `bundleCache.ts` + react-native-fs |
+| 版本比对 / 下载 | ✅ 已有 | `bundleUpdater.ts` |
+| Release split load | ✅ 已有 | `SplitBundleLoader`（需重打 BrownfieldLib） |
+| 新建 Remote 入口 API | ✅ 已有 | `POST /api/features` + Admin 表单 |
+| Remote 页面 / seed | ✅ 已有 | `order` / `promo` |
 
-### OTA 触发点：原生端 vs RN 页面内
+### OTA 作用范围
 
-**可以。** OTA 的核心逻辑（拉 manifest → 比对版本 → 下载 bundle → 加载）都在 **JS 层**（`FeatureHost` / `bundleLoader` / 未来的 `bundleCache`），并不绑定原生壳。原生端和 RN 页面内都可以触发同一套更新流程。
+| 对象 | 是否 OTA |
+|------|----------|
+| Scheme 1 核心页（HomeScreen 等） | ❌ |
+| 主 bundle / BrownfieldLib | ❌（需原生发版） |
+| Remote 入口子 bundle | ✅ |
+| Remote 菜单可见性 | ✅（manifest `enabled`，非 bundle OTA） |
 
-| 触发位置 | 典型场景 | 当前实现 | 说明 |
-|----------|----------|----------|------|
-| **原生壳** | App 启动预检、菜单下拉刷新、推送触达 | ✅ `BundleManifestService` | 控制方案 2 **入口列表**是否展示 |
-| **RN 页面内** | 设置页「检查更新」、进页前静默更新、业务事件触发 | 🔜 共用 JS API | 控制**已打开页面**或**其他 feature** 的 bundle 是否更新 |
-| **FeatureHost 内部** | 进入某个动态页时自动比对 | ✅ 部分已有 | 进页时 `fetchManifest` + 加载 |
+### OTA 触发点
 
-```mermaid
-flowchart TB
-    subgraph Triggers["OTA 触发点（任选其一或组合）"]
-        T1["原生 App 启动"]
-        T2["原生菜单下拉刷新"]
-        T3["RN 设置页按钮"]
-        T4["RN 业务逻辑 / 定时器"]
-        T5["进入 FeatureHost 页面"]
-    end
+| 触发位置 | 控制什么 | 实现 |
+|----------|----------|------|
+| 原生下拉刷新 | Remote **菜单**是否展示 | `BundleManifestService.load()` |
+| 进入 Remote 页 | **bundle 内容**是否最新 | `FeatureHost` → `checkAndUpdateFeature` |
+| Remote 页内按钮 | 手动检查更新 | `bundleUpdater` |
+| 静默预加载 | 后台下载其他 Remote bundle | `preloadFeatures([...])` |
 
-    subgraph Shared["共享 JS 更新层（与触发点无关）"]
-        API["fetchManifest()"]
-        CMP["compareVersion / compareHash"]
-        DL["downloadBundle()"]
-        CACHE["bundleCache 读写"]
-        LOAD["loadSplitBundle()"]
-    end
+**原则：**
 
-    subgraph Result["结果"]
-        R1["更新 Dynamic*Screen"]
-        R2["RN 内导航到新版本页面"]
-        R3["通知用户「已更新」"]
-    end
-
-    T1 --> API
-    T2 --> API
-    T3 --> API
-    T4 --> API
-    T5 --> API
-    API --> CMP
-    CMP --> DL
-    DL --> CACHE
-    CACHE --> LOAD
-    LOAD --> R1
-    LOAD --> R2
-    LOAD --> R3
-```
-
-**关键原则：**
-
-1. **原生负责「门」** — 是否在菜单里展示某个 RN 入口（manifest 里 `enabled`）
-2. **RN 负责「内容」** — 某个 feature 的 bundle 版本是否最新、何时拉取、何时 reload
-3. **同一 Runtime** — 无论从哪里触发，都在同一个 Brownfield JS Runtime 里加载 split bundle，不能重复 `eval` 完整包
-
-**RN 页面内触发的典型用法（待实现 `bundleUpdater` API）：**
+1. **原生管「门」** — manifest 决定 Remote 入口是否出现在菜单
+2. **JS 管「内容」** — 版本比对、下载、split load 都在 JS 层
+3. **同一 Runtime** — 禁止 Release 下 `eval` 完整 bundle（会 duplicate React）
 
 ```typescript
-// 任意 RN 页面（方案1 或 方案2 均可调用）
-import { checkAndUpdateFeature } from '../features/bundleUpdater';
+import { checkAndUpdateFeature, preloadFeatures } from '../features/bundleUpdater';
 
-// 用户点击「检查更新」
-await checkAndUpdateFeature('profile', {
-  onUpdateAvailable: (version) => showToast(`发现新版本 ${version}`),
-  onUpdated: () => navigation.replace('FeatureHost', { featureId: 'profile' }),
-});
+// Remote 页内「检查更新」
+await checkAndUpdateFeature('order');
 
-// 静默预加载：首页加载完成后，后台更新其他 feature
-useEffect(() => {
-  preloadFeatures(['profile', 'settings']);
-}, []);
+// 静默预加载
+preloadFeatures(['order', 'promo']);
 ```
-
-**RN 内 OTA vs 原生 OTA 的区别：**
-
-| | 原生端触发 | RN 页面内触发 |
-|---|-----------|---------------|
-| 更新 manifest 菜单 | ✅ 适合 | ❌ 不适用（菜单是 SwiftUI） |
-| 更新当前 RN 页 bundle | 进页时被动触发 | ✅ 适合主动检查 / 静默更新 |
-| 预加载其他 feature | 需额外桥接 | ✅ 自然适合 |
-| 更新后 UI 反馈 | 需通知 RN | ✅ 直接 setState / 弹窗 |
-
-> 实施 OTA 时，建议把 `fetchManifest`、`compareVersion`、`downloadBundle`、`loadSplitBundle` 抽成独立的 `bundleUpdater.ts`，原生和 `FeatureHost`、任意 RN 页面共用，避免逻辑重复。
 
 ### 整体架构
 
 ```mermaid
 flowchart TB
-    subgraph Publish["发布侧（CI / 开发者）"]
-        A["改 screens/dynamic/"] --> B["npm run build:bundles"]
+    subgraph Publish["发布侧"]
+        A["改 screens/remote/"] --> B["npm run build:bundles"]
         B --> C["POST /api/bundles/upload"]
-        C --> D["bundle-server 更新 manifest\nversion + hash + bundleUrl"]
+        C --> D["DB 更新 active release"]
     end
 
-    subgraph Server["bundle-server (Node.js)"]
+    subgraph Server["bundle-server"]
         D --> E["dist/bundles/*.jsbundle"]
         D --> F["GET /api/manifest"]
-        E --> G["GET /bundles/:file"]
     end
 
-    subgraph Mobile["移动端 (ios_native + FeatureHost + 任意 RN 页)"]
-        H["触发：App 启动 / 原生刷新\nRN 设置页 / 进页 / 定时器"] --> I["GET /api/manifest"]
-        I --> J{"本地 version/hash\n与服务端一致?"}
-        J -->|是| K["加载本地缓存 bundle"]
-        J -->|否| L["下载新 bundle"]
-        L --> M{"hash 校验"}
-        M -->|通过| N["写入沙盒 + 更新 metadata"]
-        M -->|失败| O["降级：内置 / 旧缓存"]
-        N --> P["loadSplitBundle"]
+    subgraph Mobile["移动端"]
+        H["触发：刷新菜单 / 进页 / RN 按钮"] --> I["GET /api/manifest"]
+        I --> J{"version/hash 一致?"}
+        J -->|是| K["读沙盒缓存"]
+        J -->|否| L["下载 bundle"]
+        L --> M{"sha256"}
+        M -->|通过| N["写沙盒"]
+        M -->|失败| O["fallback：内置 registerFeature"]
+        N --> P["SplitBundleLoader.load"]
         K --> P
         O --> P
-        P --> Q["渲染 Dynamic*Screen"]
+        P --> Q["渲染 Remote 页面"]
     end
 
     F --> I
-    G --> L
+    E --> L
 ```
 
-### 发布流程（服务端）
-
-```mermaid
-sequenceDiagram
-    participant Dev as 开发者 / CI
-    participant Build as rn_app build:bundles
-    participant API as bundle-server
-    participant Store as dist/bundles
-
-    Dev->>Build: 打包 home / profile / settings
-    Build->>Build: 计算 sha256
-    Build->>API: POST /api/bundles/upload<br/>{featureId, version, file}
-    API->>Store: 写入 home.1.2.0.ios.jsbundle
-    API->>API: 更新 manifest.config<br/>version, hash, bundleUrl
-    API-->>Dev: 200 OK + 新 manifest
-```
-
-**目标上传接口（待实现）：**
-
-```bash
-curl -X POST http://127.0.0.1:3001/api/bundles/upload \
-  -F "featureId=home" \
-  -F "version=1.2.0" \
-  -F "file=@bundle-server/dist/bundles/home.ios.jsbundle"
-```
-
-### 移动端更新流程
-
-```mermaid
-flowchart TD
-    Start(["进入方案2页面 / App 启动预检"]) --> Fetch["fetchManifest()"]
-    Fetch --> Find["按 featureId 找 RemoteFeature"]
-    Find --> ReadLocal["读本地缓存 metadata\n{version, hash, localPath}"]
-    ReadLocal --> Compare{"remote.version > local.version\n或 remote.hash ≠ local.hash?"}
-
-    Compare -->|否| LoadCache["从沙盒加载已缓存 bundle"]
-    Compare -->|是| Download["GET feature.bundleUrl"]
-    Download --> Verify{"校验 sha256"}
-    Verify -->|失败| Fallback["降级：主 bundle 内置版 / 旧缓存"]
-    Verify -->|成功| Save["写入 DocumentDirectory\n更新 AsyncStorage metadata"]
-    Save --> LoadNew["loadSplitBundle(localPath)"]
-    LoadCache --> Render["getFeatureComponent → 渲染"]
-    LoadNew --> Register["registerFeature 覆盖注册"]
-    Register --> Render
-    Fallback --> Render
-    Render --> End(["显示 Dynamic*Screen"])
-```
-
-```mermaid
-sequenceDiagram
-    participant Native as ios_native
-    participant RN as FeatureHost
-    participant Cache as 本地缓存
-    participant Server as bundle-server
-
-    Native->>Server: GET /api/manifest
-    Server-->>Native: features[{id, version, hash, bundleUrl}]
-    Native->>RN: featureId + manifestUrl
-    RN->>Cache: 读取 local metadata
-    alt 版本一致
-        RN->>Cache: 读沙盒 bundle
-        RN->>RN: loadSplitBundle(cachedPath)
-    else 有新版本
-        RN->>Server: GET bundleUrl
-        Server-->>RN: bundle binary
-        RN->>RN: 校验 hash
-        RN->>Cache: 写入 + 更新 metadata
-        RN->>RN: loadSplitBundle(newPath)
-    else 下载/校验失败
-        RN->>RN: 使用主 bundle 内置 fallback
-    end
-    RN-->>Native: 渲染 Dynamic*Screen
-```
-
-### 目标 manifest 结构
+### 目标 manifest 示例
 
 ```json
 {
   "version": 2,
   "updatedAt": "2026-07-08T12:00:00.000Z",
-  "manifestUrl": "https://cdn.example.com/api/manifest",
+  "manifestUrl": "http://127.0.0.1:3001/api/manifest",
   "features": [
     {
-      "id": "home",
-      "title": "首页",
-      "icon": "house",
-      "moduleName": "DynamicHomeScreen",
+      "id": "order",
+      "title": "订单",
+      "icon": "cart",
+      "moduleName": "OrderScreen",
       "version": "1.2.0",
       "hash": "sha256:abc123...",
-      "bundleUrl": "https://cdn.example.com/bundles/home.1.2.0.ios.jsbundle",
-      "minAppVersion": "1.0.0",
-      "enabled": true
+      "bundleUrl": "http://127.0.0.1:3001/bundles/order.1.2.0.ios.jsbundle",
+      "minAppVersion": "1.0.0"
     }
   ]
 }
 ```
 
-| 字段 | 用途 |
-|------|------|
-| `version` | 语义化版本，移动端比对是否需要更新 |
-| `hash` | bundle 文件 sha256，下载后校验完整性 |
-| `bundleUrl` | 该版本 bundle 的 CDN / 服务地址 |
-| `minAppVersion` | 低于此原生版本则不下发（避免 native 不兼容） |
-
-### 本地缓存设计（待实现）
+### 本地缓存
 
 ```
 DocumentDirectory/rn-bundles/
-  home/
-    1.2.0.jsbundle          # bundle 文件
-    metadata.json           # { version, hash, installedAt }
-  profile/
-    ...
+  order/
+    1.2.0.jsbundle
+    metadata.json
 ```
 
-```json
-// metadata.json
-{
-  "featureId": "home",
-  "version": "1.2.0",
-  "hash": "sha256:abc123...",
-  "localPath": ".../home/1.2.0.jsbundle",
-  "installedAt": "2026-07-08T12:00:00.000Z"
-}
-```
+### Dev vs Release
 
-### Dev vs Release 加载方式
+| 环境 | 主 bundle | Remote 子 bundle | 注意 |
+|------|-----------|------------------|------|
+| Debug + Metro | Metro | Metro split（`USE_METRO_BUNDLES=true`） | 可热重载 |
+| Release OTA | 内嵌 BrownfieldLib | 下载 + `SplitBundleLoader` | **禁止 eval 完整包** |
 
-```mermaid
-flowchart LR
-    subgraph Dev["Debug 开发"]
-        D1["Metro 主 bundle"] --> D2["FeatureHost"]
-        D2 --> D3["loadBundleFromServer\nmodulesOnly=true"]
-        D3 --> D4["screens/dynamic/ 热重载"]
-    end
-
-    subgraph Release["Release OTA"]
-        R1["内嵌主 bundle\n(FeatureHost + fallback)"] --> R2["fetchManifest"]
-        R2 --> R3["下载 split bundle"]
-        R3 --> R4["Native loadSplitBundle"]
-        R4 --> R5["渲染 Dynamic*Screen"]
-    end
-```
-
-| 环境 | 主 bundle 来源 | 子 bundle 来源 | 注意 |
-|------|----------------|----------------|------|
-| Debug + Metro | Metro `index.js` | Metro split（`USE_METRO_BUNDLES=true`） | 改 `screens/dynamic/` 可热重载 |
-| Debug + 静态 | Metro 或内嵌 | `bundle-server` 静态文件 | 联调分发路径 |
-| Release OTA | App 内嵌 BrownfieldLib | CDN / bundle-server 下载 | **必须** split bundle 加载，不能 `eval` 完整包 |
-
-> **为什么不能 eval 完整 bundle？** 每个完整 bundle 都包含一份 React，eval 进同一 Runtime 会导致 `useSyncExternalStore of null` 等 hooks 错误。Release 必须使用增量 split bundle 或 Native `loadAndExecuteSplitBundleURL`。
+> **为什么不能 eval 完整 bundle？** 每份完整 bundle 含一份 React，eval 进同一 Runtime 会导致 `useSyncExternalStore of null`。Release 必须用增量 split bundle。
 
 ### 降级策略
 
-```mermaid
-flowchart TD
-    A["更新失败"] --> B{"失败原因"}
-    B -->|网络| C["用上次成功缓存"]
-    B -->|hash 不匹配| D["丢弃下载，保留旧版"]
-    B -->|loadSplitBundle 失败| E["用主 bundle 内置 fallback"]
-    B -->|manifest 不可用| F["隐藏方案2入口 / 仅显示方案1"]
-    C --> G["正常渲染"]
-    D --> G
-    E --> G
-```
-
-### 实施路线图
-
-| 阶段 | 内容 | 产出 |
-|------|------|------|
-| **P0** | manifest 增加 `version` / `hash` | 服务端字段 + RN 类型定义 |
-| **P1** | `POST /api/bundles/upload` | 上传后自动更新 manifest |
-| **P2** | 移动端 `bundleCache.ts` | 下载、校验、沙盒读写、metadata |
-| **P3** | iOS `SplitBundleLoader` Native Module | Release 下 `loadSplitBundle` |
-| **P4** | App 启动预检 + 静默更新 | 进页面前 bundle 已就绪 |
-| **P5** | 灰度 / 按原生版本下发 | manifest 规则引擎 |
-
-### 与现有代码的对应
-
-| OTA 步骤 | 现有实现 | 待扩展 |
-|----------|----------|--------|
-| 打包 | `npm run build:bundles` | 打包时输出 hash |
-| 上传 | 手动拷贝到 `dist/` | `POST /api/bundles/upload` |
-| 下发 manifest | `GET /api/manifest` | 增加 version/hash 字段 |
-| 原生菜单 | `BundleManifestService` | 不变 |
-| 加载页面 | `FeatureHost` + 主 bundle registry | 增加缓存比对 + split 加载 |
-| RN 内触发 OTA | 未实现 | 抽取 `bundleUpdater.ts` 供任意 RN 页调用 |
-| 降级 | 主 bundle 内置 dynamic features | 明确 fallback 优先级 |
+1. 网络失败 → 用上次成功缓存
+2. hash 不匹配 → 丢弃下载，保留旧版
+3. split load 失败 → 主 bundle 内置 `registerFeature` fallback
+4. manifest 不可用 → Remote 菜单为空；Scheme 1 不受影响
 
 ---
 
 ## 说明
 
-- **方案 1** 只依赖 Metro / 主 bundle，适合日常开发、server 不可用时的兜底。
-- **方案 2** 使用 `screens/dynamic/` 独立页面；服务端 manifest 控制**入口可见性**；主 bundle 内注册 dynamic features（与方案 1 共享 React 实例，避免 hooks 报错）。
-- 子 bundle 文件面向 OTA；Dev 下通过 Metro `modulesOnly=true` 懒加载。
-- **Release OTA** 见上文 [OTA 热更新](#ota-热更新) 章节；当前静态 bundle 模式主要用于联调分发路径。
-- Debug 默认主 bundle 连 Metro（`preferEmbeddedBundleInDebug = false`）。
-- 模拟器访问本机服务使用 `127.0.0.1`；真机需改为电脑局域网 IP。
-- 多 bundle 使用 deterministic moduleId（见 `metro.config.js`），保证主/子 bundle 模块 ID 一致。
+- **Scheme 1** 只依赖主 bundle，server 不可用时仍可用
+- **Remote** 使用 Split Bundle 技术（方案 2）；manifest 管入口，OTA 管 bundle 内容
+- 主 bundle 内 `registerFeature` 仅作 offline / 首次安装 fallback
+- Debug 默认连 Metro（`preferEmbeddedBundleInDebug = false`）
+- 模拟器用 `127.0.0.1`；真机改局域网 IP
+- moduleId 见 `metro.config.js` deterministic factory
 
-更多背景见 [multi-bundle.md](./multi-bundle.md)。
+更多背景：[multi-bundle.md](./multi-bundle.md)

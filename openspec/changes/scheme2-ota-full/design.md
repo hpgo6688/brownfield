@@ -1,126 +1,143 @@
 ## Context
 
-The brownfield project supports two RN integration schemes:
+The brownfield project integrates RN via `@callstack/react-native-brownfield` — **one JS Runtime singleton** per app.
 
-- **Scheme 1**: Single bundle, multiple `moduleName` entries (`HomeScreen`, etc.)
-- **Scheme 2**: Dynamic multi-bundle via `bundle-server` manifest, `FeatureHost`, and separate `screens/dynamic/*` pages
+### Product split (what users see in the native shell)
 
-Scheme 2 currently delivers server-controlled **entry visibility** and Dev split-bundle loading via Metro `modulesOnly=true`. Release OTA is documented but not implemented: no version/hash in manifest, no upload API, no persistent cache, and full-bundle `eval` breaks React hooks.
+```
+Native Shell menu
+├── 原生页面
+├── React Native · 核心 RN（Scheme 1）     ← 本地固定，不走 manifest
+│     HomeScreen / ProfileScreen / SettingsScreen
+└── React Native · 远程业务（Remote）      ← manifest 动态入口 + OTA
+      order / promo / …（服务端可增删）
+```
 
-Constraints:
+### Technical mapping
 
-- Single Brownfield JS Runtime (`ReactNativeBrownfield.shared` singleton)
-- Scheme 1 must remain unchanged
-- Scheme 2 pages live in `screens/dynamic/` (not Scheme 1 screens)
-- iOS-first; Android out of scope for this change
+| Product | Implementation | Notes |
+|---------|----------------|-------|
+| Scheme 1 core RN | Single main bundle + `LocalReactNativeScreenView(moduleName:)` | No bundle-server required |
+| Remote business block | Scheme 2 tech: manifest + split sub-bundles + `FeatureHost` + OTA | Same `rn_app`, same BrownfieldLib, same Runtime |
+
+Remote is **not** Re.Pack 方案三 and **not** a second XCFramework 方案四 unless Remote business later requires a different RN version (explicit future decision).
+
+### Current demo problem
+
+Early implementation used `screens/dynamic/Dynamic*Screen` as **copies** of Scheme 1 tabs (`home`, `profile`, `settings`). That was useful for A/B comparison but is **not** the target product model. Remote entries should represent **new business surfaces** independent of core tabs.
+
+### OTA gap (before this change)
+
+Server-side manifest v2, upload, and Admin exist (Fastify + Prisma). Client-side cache, Release split load, and Remote-only page model still need alignment.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- End-to-end OTA for Scheme 2 dynamic features: build → upload → manifest update → client compare → download → verify → cache → split load
-- OTA triggers from **native shell** and **any RN page** via shared `bundleUpdater` JS API
-- Safe Release loading via iOS native split bundle loader (no duplicate React)
-- Fallback to last good cache or main-bundle built-in dynamic features on failure
-- Dev workflow preserved: Metro + `USE_METRO_BUNDLES=true`
+- End-to-end OTA for **Remote entries**: build → upload → manifest → client compare → download → verify → cache → split load
+- Admin can **register new Remote entries** and publish bundles without app release
+- Native menu shows Remote block from manifest; Scheme 1 menu unchanged
+- Shared `bundleUpdater` callable from `FeatureHost`, Remote RN pages, and optional native triggers
+- Release load via iOS `SplitBundleLoader` (no duplicate React / no full-bundle `eval`)
+- Fallback: last good cache → main-bundle built-in Remote registry (offline / first launch)
+- Dev: Metro + `USE_METRO_BUNDLES=true` + `modulesOnly=true`
 
 **Non-Goals:**
 
-- OTA for Scheme 1 pages
+- OTA for Scheme 1 (`HomeScreen`, etc.)
 - OTA for main/bootstrap bundle (`index.js` / BrownfieldLib) — requires native App update
-- Android split bundle loader
-- Gray release / A-B rules engine (future P5)
-- CodePush / Expo Updates integration
-- Hermes bytecode (`.hbc`) pipeline — start with plain `.jsbundle` split loads
+- Re.Pack Module Federation (multi-bundle.md 方案三)
+- Second RN repo / XCFramework for Remote (方案四) in v1
+- Android split loader
+- Gray release / A-B engine
+- CodePush / Expo Updates
+- Hermes `.hbc` in v1
 
 ## Decisions
 
-### 1. Manifest persistence: JSON file on disk
+### 1. Naming: Remote (product) vs Scheme 2 (tech)
 
-**Choice:** `bundle-server/manifest.store.json` written by upload API; `manifest.config.js` becomes seed/defaults only.
+**Choice:** User-facing labels use **「远程业务 / Remote entries」**. Docs refer to **Scheme 2** only when describing split-bundle + manifest + OTA mechanics.
 
-**Rationale:** Upload API must mutate manifest at runtime without editing source files.
+**Rationale:** Avoid implying Remote = duplicate of Scheme 1 pages or a separate RN app.
 
-**Alternative:** Keep `manifest.config.js` only — rejected; requires server restart and manual edits per upload.
+### 2. Remote entry content model
 
-### 2. Version identity: semver + sha256 hash
+**Choice:** Remote pages live in `rn_app/screens/remote/` with matching `bundles/<entryId>/index.js` sub-bundle entries. Seed examples: `order`, `promo` — **not** mirrors of `home/profile/settings`.
 
-**Choice:** Each feature carries `version` (semver string) and `hash` (sha256 hex of bundle file). Client compares semver first; hash confirms file integrity after download.
+**Rationale:** Remote block is an extensible business area; manifest controls which entries appear.
 
-**Rationale:** semver is human-friendly for CI/logs; hash prevents corrupted or tampered bundles.
+**Alternative:** Keep Dynamic* mirror pages — rejected for product clarity.
 
-**Alternative:** Hash-only — rejected; harder for operators to reason about releases.
+### 3. Manifest persistence: Prisma + SQLite
 
-### 3. Client cache location: RN filesystem API
+**Choice:** `Feature` and `BundleRelease` models in Prisma (replaces original `manifest.store.json` design).
 
-**Choice:** Use `react-native-fs` (or RN built-in if sufficient) under `DocumentDirectory/rn-bundles/<featureId>/<version>.jsbundle` plus `metadata.json`.
+**Rationale:** Upload, rollback, and Admin need relational history; already implemented in bundle-server v2.
 
-**Rationale:** Release bundles must persist across app restarts; AsyncStorage alone is insufficient for binary payloads.
+### 4. Version identity: semver + sha256 hash
 
-**Alternative:** AsyncStorage for small bundles — rejected; size limits and no streaming.
+**Choice:** Each Remote entry carries `version` and `hash` (`sha256:<hex>`). Client compares semver first; hash verifies download integrity.
 
-### 4. Release load path: Native SplitBundleLoader module
+### 5. Client cache: react-native-fs
 
-**Choice:** New iOS TurboModule/NativeModule `SplitBundleLoader.load(url: string)` calling bridge `loadAndExecuteSplitBundleURL` (or RN 0.86 equivalent host API).
+**Choice:** `DocumentDirectory/rn-bundles/<entryId>/<version>.jsbundle` + `metadata.json`; keep latest 2 versions per entry.
 
-**Rationale:** Full-bundle `eval` duplicates React → hooks crash (`useSyncExternalStore of null`). Split load registers modules in existing runtime.
+### 6. Release load: SplitBundleLoader native module
 
-**Alternative:** Keep eval for Release — rejected; proven broken.
+**Choice:** `SplitBundleLoader.load(fileUrl)` → `RCTCxxBridge executeApplicationScript` on existing bridge.
 
-### 5. Shared update orchestration: `bundleUpdater.ts`
+**Rationale:** Full-bundle `eval` duplicates React → hooks crash.
 
-**Choice:** Single module exporting `checkAndUpdateFeature`, `preloadFeatures`, `getCachedFeatureVersion`. Used by `FeatureHost`, native bridge (optional), and any RN screen.
+### 7. Shared orchestration: bundleUpdater.ts
 
-**Rationale:** Avoid duplicating compare/download/cache logic across trigger points (documented in OTA section).
+**Choice:** `checkAndUpdateFeature`, `preloadFeatures`, `getCachedFeatureVersion` — used by FeatureHost and any RN screen.
 
-### 6. Build pipeline emits hash manifest
+### 8. Main bundle fallback registry
 
-**Choice:** `scripts/build-bundles.js` writes `bundle-server/dist/bundles/build-manifest.json` with `{ featureId, version, hash, file }` for CI/upload scripts.
+**Choice:** `index.js` registers built-in Remote features via `registerFeature()` for offline/first-launch fallback only.
 
-**Rationale:** Upload API can validate client-supplied hash against file on disk.
+**Trade-off:** Main bundle includes last-shipped Remote pages; OTA overrides registry after successful split load.
 
-### 7. Main bundle retains built-in dynamic features as fallback
+### 9. Create Remote entry via Admin
 
-**Choice:** `index.js` continues registering `dynamicFeatures` in main bundle registry.
+**Choice:** Add `POST /api/features` (or Admin form) to register new `featureId`, `title`, `icon`, `moduleName`, `metroEntry` before first upload.
 
-**Rationale:** Offline / first launch / failed OTA still renders Scheme 2 pages at last shipped native version.
+**Rationale:** Remote block must grow without code deploy to bundle-server seed.
 
-**Trade-off:** Main bundle size includes dynamic screens; true code-splitting only after successful OTA load overrides registry.
+### 10. OTA trigger matrix
 
-### 8. OTA trigger matrix
-
-| Trigger | Implementation |
-|---------|----------------|
-| Native menu refresh | Existing `BundleManifestService.load()` — menu only |
-| App startup pre-check | New optional call from `ios_nativeApp` → RN bridge event or native fetch + pass to RN |
-| FeatureHost enter page | `bundleUpdater.checkAndUpdateFeature(featureId)` |
-| RN settings button | `DynamicSettingsScreen` calls `bundleUpdater` |
-| Silent preload | `bundleUpdater.preloadFeatures([...])` from any RN page |
-
-Native pre-check for **menu** stays Swift; **bundle content** updates stay JS.
+| Trigger | Scope | Implementation |
+|---------|-------|----------------|
+| Native menu refresh | Remote **menu visibility** | `BundleManifestService.load()` |
+| FeatureHost enter page | Remote **bundle content** | `bundleUpdater.checkAndUpdateFeature` |
+| Remote RN settings UI | Manual check | e.g. button on a Remote page |
+| Silent preload | Remote bundles | `preloadFeatures([...])` |
+| Scheme 1 pages | N/A | Never OTA |
 
 ## Risks / Trade-offs
 
 | Risk | Mitigation |
 |------|------------|
-| Split bundle still includes React if build misconfigured | CI check: reject bundles whose hash matches full standalone build; document Metro `modulesOnly` / shared moduleId factory |
-| Native module API differs in RN 0.86 new architecture | Implement against current Brownfield bridge; test on simulator Release build |
-| Cache grows unbounded | TTL + max versions per feature (keep latest 2) |
-| semver compare edge cases | Use `semver` npm package server-side and client-side |
-| Main bundle + OTA bundle module ID collision | Reuse existing deterministic `createModuleIdFactory` in `metro.config.js` |
-| Upload API security | Local dev: no auth; document production need for API key / CI token (non-goal for v1) |
+| Terminology confusion (Scheme 2 vs Remote vs Re.Pack 3) | This design doc + doc updates |
+| Split bundle includes React if misbuilt | CI hash checks; Metro shared moduleId factory |
+| RN 0.86 bridge API drift | Test Release on simulator; gate on SplitBundleLoader availability |
+| Cache growth | Prune to 2 versions per entry |
+| Main + OTA module ID collision | Shared `createModuleIdFactory` in metro.config.js |
+| Upload API security (dev) | Document production API key requirement |
 
 ## Migration Plan
 
-1. Ship server manifest v2 fields (backward compatible: default version `0.0.0` if missing)
-2. Ship client with compare logic — treats missing local cache as "needs update"
-3. Add upload API; migrate manual `dist/` copies to upload script
-4. Add iOS SplitBundleLoader; gate Release path on module availability
-5. Rebuild `brownfield:package:ios:debug` after native module lands
-6. Rollback: disable feature in manifest `enabled: false`; client falls back to main bundle registry
+1. Update OpenSpec + docs terminology (this change)
+2. Reseed: `order`, `promo` Remote entries; deprecate mirror `home/profile/settings` dynamic demo
+3. Rename menu section in `ContentView` to Remote / 远程业务
+4. Ship client OTA (cache, updater, SplitBundleLoader)
+5. Admin: create-entry API
+6. Rebuild `brownfield:package:ios:debug`
+7. Rollback: disable entry in manifest or activate prior release
 
 ## Open Questions
 
-- Use `react-native-fs` vs Expo FileSystem (project is bare RN — likely `react-native-fs` or `@react-native-community/async-storage` + fetch to file via native helper)
-- Whether startup pre-check runs in native only or via lightweight RN headless task
-- Hermes bytecode support timeline for OTA bundles
+- Exact Remote v1 pages: `order` + `promo` vs one `activity` entry first?
+- Whether built-in fallback in main bundle ships all Remote pages or only a minimal stub per entry
+- Startup preload: native manifest-only vs JS `preloadFeatures` on app launch

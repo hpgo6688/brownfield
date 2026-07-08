@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyRequest } from 'fastify';
 import { buildManifest } from '../services/manifest.service';
 import {
   activateRelease,
+  createFeature,
   createReleaseFromUpload,
   listFeaturesAdmin,
   rollbackFeature,
@@ -47,6 +48,46 @@ export async function registerApiRoutes(app: FastifyInstance) {
   app.get('/api/admin/features', async () => {
     const features = await listFeaturesAdmin();
     return { features };
+  });
+
+  app.post('/api/features', async (request, reply) => {
+    const body = request.body as {
+      id?: string;
+      title?: string;
+      icon?: string;
+      moduleName?: string;
+      metroEntry?: string;
+      minAppVersion?: string;
+      enabled?: boolean;
+    };
+
+    if (!body?.id || !body?.title || !body?.moduleName || !body?.metroEntry) {
+      return reply.code(400).send({
+        error: 'id, title, moduleName, and metroEntry are required',
+      });
+    }
+
+    try {
+      const feature = await createFeature({
+        id: body.id,
+        title: body.title,
+        icon: body.icon,
+        moduleName: body.moduleName,
+        metroEntry: body.metroEntry,
+        minAppVersion: body.minAppVersion,
+        enabled: body.enabled,
+      });
+
+      const { protocol, host } = requestBaseUrl(request);
+      return reply.code(201).send({
+        feature,
+        manifest: await buildManifest({ protocol, host }),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Create failed';
+      const status = message.includes('already exists') ? 409 : 400;
+      return reply.code(status).send({ error: message });
+    }
   });
 
   app.post('/api/features/:id/toggle', async (request) => {

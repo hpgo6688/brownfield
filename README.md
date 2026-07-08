@@ -228,6 +228,6 @@ cd rn_app && npm install && npm start
 
 ## 参考
 
-- [多 Bundle 方案（不同 RN 页面使用不同 bundle）](docs/multi-bundle.md)
-- [动态多 Bundle（方案 2 + OTA 热更新）](docs/dynamic-multi-bundle.md)
+- [多 Bundle 方案（Split Bundle / Re.Pack / 多 XCFramework）](docs/multi-bundle.md)
+- [Remote 远程业务块（Split Bundle + manifest + OTA）](docs/dynamic-multi-bundle.md)
 - [iOS Integration 官方文档](https://oss.callstack.com/react-native-brownfield/docs/getting-started/ios)

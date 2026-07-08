@@ -4,6 +4,9 @@ export type RemoteFeature = {
   icon: string;
   moduleName: string;
   bundleUrl: string;
+  version: string;
+  hash: string;
+  minAppVersion: string;
 };
 
 export type BundleManifest = {
@@ -20,8 +23,14 @@ let cachedManifest: BundleManifest | null = null;
 
 export async function fetchManifest(
   manifestUrl: string = DEFAULT_MANIFEST_URL,
+  options?: { appVersion?: string },
 ): Promise<BundleManifest> {
-  const response = await fetch(manifestUrl);
+  const url = new URL(manifestUrl);
+  if (options?.appVersion) {
+    url.searchParams.set('appVersion', options.appVersion);
+  }
+
+  const response = await fetch(url.toString());
   if (!response.ok) {
     throw new Error(`Manifest request failed (${response.status})`);
   }

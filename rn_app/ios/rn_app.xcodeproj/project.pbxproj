@@ -14,6 +14,7 @@
 		79BD1EE92EEBFB76003AA29F /* BrownfieldLib.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79BD1EE32EEBFB76003AA29F /* BrownfieldLib.framework */; };
 		79BD1EEA2EEBFB76003AA29F /* BrownfieldLib.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 79BD1EE32EEBFB76003AA29F /* BrownfieldLib.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		79F35E8C2EEC1D4500E64860 /* BrownfieldLib.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79F35E8A2EEC1D4500E64860 /* BrownfieldLib.swift */; };
+		7A1B2C3D4E5F6012345678A /* SplitBundleLoader.mm in Sources */ = {isa = PBXBuildFile; fileRef = 7A1B2C3D4E5F60123456789 /* SplitBundleLoader.mm */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		C47B7BC2E740E50042CEF9AB /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
@@ -53,6 +54,8 @@
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = rn_app/AppDelegate.swift; sourceTree = "<group>"; };
 		79BD1EE32EEBFB76003AA29F /* BrownfieldLib.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = BrownfieldLib.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		79F35E8A2EEC1D4500E64860 /* BrownfieldLib.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrownfieldLib.swift; sourceTree = "<group>"; };
+		7A1B2C3D4E5F60123456789 /* SplitBundleLoader.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = SplitBundleLoader.mm; sourceTree = "<group>"; };
+		7A1B2C3D4E5F6012345678B /* SplitBundleLoader.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SplitBundleLoader.h; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = rn_app/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		8A02E03D9F74B585B0A8F7F7 /* Pods-rn_app-BrownfieldLib.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-rn_app-BrownfieldLib.debug.xcconfig"; path = "Target Support Files/Pods-rn_app-BrownfieldLib/Pods-rn_app-BrownfieldLib.debug.xcconfig"; sourceTree = "<group>"; };
 		C8D39C0AE446DAC8D403AA37 /* Pods_rn_app_BrownfieldLib.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_rn_app_BrownfieldLib.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -108,6 +111,8 @@
 			isa = PBXGroup;
 			children = (
 				79F35E8A2EEC1D4500E64860 /* BrownfieldLib.swift */,
+				7A1B2C3D4E5F6012345678B /* SplitBundleLoader.h */,
+				7A1B2C3D4E5F60123456789 /* SplitBundleLoader.mm */,
 			);
 			path = BrownfieldLib;
 			sourceTree = "<group>";
@@ -406,6 +411,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				79F35E8C2EEC1D4500E64860 /* BrownfieldLib.swift in Sources */,
+				7A1B2C3D4E5F6012345678A /* SplitBundleLoader.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

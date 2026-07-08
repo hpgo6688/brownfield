@@ -2,49 +2,49 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-const seedFeatures = [
+const remoteEntries = [
   {
-    id: 'home',
-    title: '首页',
-    icon: 'house',
-    moduleName: 'DynamicHomeScreen',
-    metroEntry: 'bundles/home/index',
+    id: 'order',
+    title: '订单',
+    icon: 'cart',
+    moduleName: 'OrderScreen',
+    metroEntry: 'bundles/order/index',
   },
   {
-    id: 'profile',
-    title: '个人中心',
-    icon: 'person',
-    moduleName: 'DynamicProfileScreen',
-    metroEntry: 'bundles/profile/index',
-  },
-  {
-    id: 'settings',
-    title: '设置',
-    icon: 'gearshape',
-    moduleName: 'DynamicSettingsScreen',
-    metroEntry: 'bundles/settings/index',
+    id: 'promo',
+    title: '活动',
+    icon: 'sparkles',
+    moduleName: 'PromoScreen',
+    metroEntry: 'bundles/promo/index',
   },
 ];
 
+const deprecatedDemoIds = ['home', 'profile', 'settings'];
+
 async function main() {
-  for (const feature of seedFeatures) {
+  await prisma.feature.deleteMany({
+    where: { id: { in: deprecatedDemoIds } },
+  });
+
+  for (const entry of remoteEntries) {
     await prisma.feature.upsert({
-      where: { id: feature.id },
+      where: { id: entry.id },
       create: {
-        ...feature,
+        ...entry,
         enabled: true,
         minAppVersion: '1.0.0',
       },
       update: {
-        title: feature.title,
-        icon: feature.icon,
-        moduleName: feature.moduleName,
-        metroEntry: feature.metroEntry,
+        title: entry.title,
+        icon: entry.icon,
+        moduleName: entry.moduleName,
+        metroEntry: entry.metroEntry,
+        enabled: true,
       },
     });
   }
 
-  console.log(`Seeded ${seedFeatures.length} features.`);
+  console.log(`Seeded ${remoteEntries.length} Remote entries (order, promo).`);
 }
 
 main()

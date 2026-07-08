@@ -1,22 +1,23 @@
 # bundle-server
 
-Scheme 2 dynamic bundle manifest server.
+Remote RN entry manifest server — serves **Remote 远程业务** entries (not Scheme 1 core pages).
 
 ## Stack
 
 - **Fastify** — HTTP server
-- **Prisma + SQLite** — feature registry, release history, rollback (swap `DATABASE_URL` for PostgreSQL in production)
+- **Prisma + SQLite** — Remote entry registry, release history, rollback
 - **TypeScript**
 
 ## Commands
 
 ```bash
 npm install
-npm run dev          # creates DB + seed, then starts with hot reload
+npm run dev          # db:prepare + hot reload
+npm run smoke:manifest
 npm run build && npm start
 ```
 
-`npm run dev` runs `db:prepare` first (Prisma push + seed). Database file: `data/bundle-server.db`.
+Database file: `data/bundle-server.db`.
 
 ## URLs
 
@@ -25,18 +26,22 @@ npm run build && npm start
 
 ## Upload & rollback
 
-Use the admin UI or:
-
 ```bash
+# Target Remote entry (e.g. order)
 curl -X POST http://127.0.0.1:3001/api/bundles/upload \
-  -F featureId=home \
+  -F featureId=order \
   -F version=1.0.0 \
-  -F file=@dist/bundles/home.ios.jsbundle
+  -F file=@dist/bundles/order.1.0.0.ios.jsbundle
 
-curl -X POST http://127.0.0.1:3001/api/features/home/rollback \
+curl -X POST http://127.0.0.1:3001/api/features/order/rollback \
   -H 'Content-Type: application/json' \
   -d '{"releaseId":"<id>"}'
+
+# CI helper
+./scripts/upload-bundle.sh order 1.0.0 dist/bundles/order.1.0.0.ios.jsbundle
 ```
+
+> Remote entries: `order`, `promo`. Create more via Admin or `POST /api/features`.
 
 ## Env
 
@@ -46,3 +51,8 @@ curl -X POST http://127.0.0.1:3001/api/features/home/rollback \
 | `DATABASE_URL` | `file:../data/bundle-server.db` | Prisma database |
 | `USE_METRO_BUNDLES` | `false` | Point manifest URLs to Metro split bundles |
 | `METRO_HOST` | `http://127.0.0.1:8081` | Metro base URL |
+
+## Docs
+
+- [Remote RN + OTA](../docs/dynamic-multi-bundle.md)
+- [Multi-bundle background](../docs/multi-bundle.md)

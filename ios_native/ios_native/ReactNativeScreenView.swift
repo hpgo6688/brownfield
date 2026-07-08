@@ -57,8 +57,8 @@ struct LocalReactNativeScreenView: View {
     }
 }
 
-/// 方案 2: FeatureHost loads sub-bundles from server manifest.
-struct DynamicReactNativeScreenView: View {
+/// Remote entry: FeatureHost loads sub-bundles from server manifest.
+struct RemoteReactNativeScreenView: View {
     let featureId: String
     let title: String
     var manifestURL: URL = BundleManifestConfig.defaultManifestURL
@@ -74,3 +74,6 @@ struct DynamicReactNativeScreenView: View {
         )
     }
 }
+
+@available(*, deprecated, renamed: "RemoteReactNativeScreenView")
+typealias DynamicReactNativeScreenView = RemoteReactNativeScreenView

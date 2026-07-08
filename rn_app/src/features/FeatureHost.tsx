@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import type { ComponentType } from 'react';
+import { checkAndUpdateFeature } from './bundleUpdater';
 import { loadFeatureBundle } from './bundleLoader';
-import { fetchFeatureById } from './manifest';
 import { getFeatureComponent } from './registerFeature';
 
 type FeatureHostProps = {
@@ -30,16 +30,23 @@ export default function FeatureHost({
       setScreen(null);
 
       try {
-        const feature = await fetchFeatureById(featureId, manifestUrl);
+        const updateResult = await checkAndUpdateFeature(featureId, {
+          manifestUrl,
+        });
 
-        let component = getFeatureComponent(featureId);
-
-        // Optional OTA: load incremental split bundle when not in main registry
-        if (!component) {
-          await loadFeatureBundle(feature);
-          component = getFeatureComponent(featureId);
+        if (updateResult.bundlePath) {
+          try {
+            await loadFeatureBundle(updateResult.feature, {
+              localPath: updateResult.bundlePath,
+            });
+          } catch (loadError) {
+            if (!getFeatureComponent(featureId)) {
+              throw loadError;
+            }
+          }
         }
 
+        const component = getFeatureComponent(featureId);
         if (!component) {
           throw new Error(`Feature "${featureId}" is not available`);
         }
@@ -48,6 +55,12 @@ export default function FeatureHost({
           setScreen(() => component);
         }
       } catch (loadError) {
+        const fallback = featureId ? getFeatureComponent(featureId) : null;
+        if (fallback && !cancelled) {
+          setScreen(() => fallback);
+          return;
+        }
+
         if (!cancelled) {
           const message =
             loadError instanceof Error ? loadError.message : 'Unknown load error';

@@ -77,7 +77,19 @@
 </head>
 <body>
   <h1>Bundle Server Admin</h1>
-  <p class="sub">管理 Scheme 2 动态页面：发布 bundle、切换线上版本、回滚历史版本</p>
+  <p class="sub">管理 Remote 远程业务入口：新建入口、发布 bundle、切换线上版本、回滚</p>
+
+  <div class="card" id="createCard">
+    <h2>新建 Remote 入口</h2>
+    <form id="createForm" class="upload" style="grid-template-columns: repeat(3, minmax(120px, 1fr)) auto auto;">
+      <input name="id" placeholder="entry id (order)" required pattern="[a-z][a-z0-9-]*" />
+      <input name="title" placeholder="标题" required />
+      <input name="moduleName" placeholder="moduleName (OrderScreen)" required />
+      <input name="metroEntry" placeholder="metroEntry (bundles/order/index)" required />
+      <input name="icon" placeholder="SF Symbol (cart)" />
+      <button class="primary" type="submit">创建入口</button>
+    </form>
+  </div>
 
   <div class="toolbar">
     <button class="primary" id="refreshBtn">刷新</button>
@@ -202,6 +214,21 @@
     }
 
     document.getElementById('refreshBtn').addEventListener('click', loadFeatures);
+
+    document.getElementById('createForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const payload = Object.fromEntries(new FormData(form).entries());
+      await api('/api/features', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      toast('Remote 入口已创建');
+      form.reset();
+      loadFeatures();
+    });
+
     loadFeatures().catch(error => {
       featureList.innerHTML = `<div class="card">加载失败：${error.message}</div>`;
     });

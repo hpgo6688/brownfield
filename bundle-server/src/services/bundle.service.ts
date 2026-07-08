@@ -115,3 +115,40 @@ export async function listFeaturesAdmin() {
     orderBy: { id: 'asc' },
   });
 }
+
+export async function createFeature(params: {
+  id: string;
+  title: string;
+  icon?: string;
+  moduleName: string;
+  metroEntry: string;
+  minAppVersion?: string;
+  enabled?: boolean;
+}) {
+  const { id, title, icon, moduleName, metroEntry, minAppVersion, enabled } = params;
+
+  if (!/^[a-z][a-z0-9-]*$/.test(id)) {
+    throw new Error('Invalid feature id: use lowercase letters, numbers, hyphens');
+  }
+
+  const existing = await prisma.feature.findUnique({ where: { id } });
+  if (existing) {
+    throw new Error('Feature already exists');
+  }
+
+  return prisma.feature.create({
+    data: {
+      id,
+      title,
+      icon: icon ?? 'square.grid.2x2',
+      moduleName,
+      metroEntry,
+      minAppVersion: minAppVersion ?? '1.0.0',
+      enabled: enabled ?? true,
+    },
+    include: {
+      activeRelease: true,
+      releases: { orderBy: { createdAt: 'desc' } },
+    },
+  });
+}
