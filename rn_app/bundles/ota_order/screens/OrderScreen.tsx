@@ -2,6 +2,7 @@
 import { StyleSheet, View } from 'react-native';
 import { OrderList, RemoteHero } from '../../../screens/remote/components';
 import { RemoteScreenShell } from '../../../screens/remote/RemoteScreenShell';
+import { OTA_RELEASE_VERSION } from '../../otaReleaseVersion';
 
 export default function OrderScreen() {
   return (
@@ -12,7 +13,7 @@ export default function OrderScreen() {
           badgeColor="#059669"
           heroBackground="#ECFDF5"
           title="订单"
-          subtitle="v0.0.5 · OTA 远程 — 订单 polling 测试，Banner 点「立即更新」"
+          subtitle={`v${OTA_RELEASE_VERSION} · OTA 远程 — 订单 polling 测试，Banner 点「立即更新」`}
         />
         <OrderList statusColor="#059669" />
       </View>

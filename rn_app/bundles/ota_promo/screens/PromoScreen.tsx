@@ -2,6 +2,7 @@
 import { StyleSheet, View } from 'react-native';
 import { PromoList, RemoteHero } from '../../../screens/remote/components';
 import { RemoteScreenShell } from '../../../screens/remote/RemoteScreenShell';
+import { OTA_RELEASE_VERSION } from '../../otaReleaseVersion';
 
 export default function PromoScreen() {
   return (
@@ -12,7 +13,7 @@ export default function PromoScreen() {
           badgeColor="#059669"
           heroBackground="#ECFDF5"
           title="活动"
-          subtitle="v0.0.5 · OTA 远程 — 活动 polling 测试，Banner 点「立即更新」"
+          subtitle={`v${OTA_RELEASE_VERSION} · OTA 远程 — 活动 polling 测试，Banner 点「立即更新」`}
         />
         <View style={styles.card}>
           <PromoList tagColor="#059669" />
