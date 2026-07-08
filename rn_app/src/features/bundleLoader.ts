@@ -6,6 +6,7 @@ import {
 import { getForceOtaInDev } from './remoteConfig';
 import { isFeatureLoaded, isFeatureLoadedFromOta } from './registerFeature';
 import { getFeatureSegmentId } from './segmentRegistry';
+import { executeSplitBundleEntry } from './splitBundleEntry';
 import { isSplitBundleLoaderAvailable, SplitBundleLoader } from './splitBundleLoader';
 
 declare const global: {
@@ -63,6 +64,7 @@ async function loadFromNativeSplitBundle(
     );
   }
   await SplitBundleLoader!.load(path, segmentId);
+  await executeSplitBundleEntry(path);
 }
 
 /**
@@ -71,14 +73,15 @@ async function loadFromNativeSplitBundle(
  */
 export async function loadFeatureBundle(
   feature: RemoteFeature,
-  options?: { localPath?: string | null; force?: boolean },
+  options?: { localPath?: string | null; force?: boolean; otaMode?: boolean },
 ): Promise<void> {
   const localPath = options?.localPath ?? null;
+  const useOta = options?.otaMode ?? getForceOtaInDev();
   const loadKey = localPath
     ? `${feature.id}:${localPath}`
     : `${feature.id}:${feature.bundleUrl}`;
 
-  const alreadyLoaded = getForceOtaInDev()
+  const alreadyLoaded = useOta
     ? isFeatureLoadedFromOta(feature.id)
     : isFeatureLoaded(feature.id);
 
@@ -86,14 +89,14 @@ export async function loadFeatureBundle(
     return;
   }
 
-  if (getForceOtaInDev() && (localPath || isLocalFileUrl(feature.bundleUrl))) {
+  if (useOta && (localPath || isLocalFileUrl(feature.bundleUrl))) {
     const path = localPath ?? feature.bundleUrl;
     await loadFromNativeSplitBundle(feature, path);
     loadedBundleKeys.add(loadKey);
     return;
   }
 
-  if (!getForceOtaInDev() && isMetroDevUrl(feature.bundleUrl)) {
+  if (!useOta && isMetroDevUrl(feature.bundleUrl)) {
     if (__DEV__) {
       console.log(
         `[SplitBundleLoader] metro dev load feature=${feature.id} url=${feature.bundleUrl}`,

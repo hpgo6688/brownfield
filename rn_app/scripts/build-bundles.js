@@ -75,13 +75,25 @@ function finalizeSplitBundle(bundlePath, entryFile) {
   const entryPattern = new RegExp(
     `},(\\d+),\\[[^\\]]*\\],"${entryLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"\\)`,
   );
-  const entryMatch = code.match(entryPattern);
-  if (!entryMatch) {
+  let entryModuleId = code.match(entryPattern)?.[1] ?? null;
+
+  if (!entryModuleId) {
+    const fallbackPattern = new RegExp(
+      `},(\\d+),\\[[^\\]]*\\],"[^"]*${path.basename(entryLabel).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"\\)`,
+    );
+    entryModuleId = code.match(fallbackPattern)?.[1] ?? null;
+  }
+
+  if (!entryModuleId) {
+    const trailingEntry = [...code.matchAll(/__r\((\d+)\);/g)].pop();
+    entryModuleId = trailingEntry?.[1] ?? null;
+  }
+
+  if (!entryModuleId) {
     console.warn(`Could not locate entry module id for ${entryLabel} in ${bundlePath}`);
     return;
   }
 
-  const entryModuleId = entryMatch[1];
   code = code.replace(/\n__r\(\d+\);/g, '');
   code = `${code.trim()}\n__r(${entryModuleId});\n`;
   fs.writeFileSync(bundlePath, code);

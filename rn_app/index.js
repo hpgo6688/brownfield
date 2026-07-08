@@ -5,6 +5,7 @@
 import { AppRegistry } from 'react-native';
 import App from './App';
 import { name as appName } from './app.json';
+import { installDevOtaModeBridge } from './src/features/devOtaModeBridge';
 import FeatureHost from './src/features/FeatureHost';
 import { registerFeature } from './src/features/registerFeature';
 import HomeScreen from './screens/HomeScreen';
@@ -35,3 +36,5 @@ Object.entries(remoteFeatureMeta).forEach(([featureId, feature]) => {
 });
 
 AppRegistry.registerComponent('FeatureHost', () => FeatureHost);
+
+installDevOtaModeBridge();

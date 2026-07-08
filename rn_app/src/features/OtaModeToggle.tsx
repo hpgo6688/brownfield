@@ -1,8 +1,11 @@
-import { DevSettings, Pressable, StyleSheet, Text } from 'react-native';
+/**
+ * @deprecated Use native shell toolbar toggle (RemoteReactNativeScreenView).
+ * Kept for standalone `npm run ios` debugging without the Swift shell.
+ */
+import { Pressable, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { clearLoadedBundles } from './bundleLoader';
-import { clearFeatureRegistration } from './registerFeature';
-import { persistOtaModeOnNextLaunch } from './otaModeFlag';
+import { setPersistedDevOtaMode } from './devOtaModeStore';
+import { reloadFeatureRuntime } from './featureReload';
 import {
   getForceOtaInDev,
   setForceOtaInDev,
@@ -23,16 +26,9 @@ export function OtaModeToggle({ absolute = true }: OtaModeToggleProps) {
 
   async function handlePress() {
     const nextOta = !getForceOtaInDev();
-    clearLoadedBundles();
-    clearFeatureRegistration();
-
-    if (nextOta) {
-      await persistOtaModeOnNextLaunch();
-      DevSettings.reload();
-      return;
-    }
-
-    setForceOtaInDev(false);
+    await setPersistedDevOtaMode(nextOta);
+    setForceOtaInDev(nextOta);
+    reloadFeatureRuntime();
   }
 
   return (

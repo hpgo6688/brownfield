@@ -2,8 +2,8 @@ import semver from 'semver';
 import { sha256 } from 'js-sha256';
 import {
   cachedBundleFileExists,
-  deleteCachedBundle,
   isBundleCacheAvailable,
+  isCachedBundleUsable,
   normalizeLocalPath,
   pruneOldVersions,
   readCachedMetadata,
@@ -115,8 +115,10 @@ export async function checkAndUpdateFeature(
     }
 
     const cached = await readCachedMetadata(featureId);
-    const cachedFileReady =
+    const cachedFileExists =
       cached !== null && (await cachedBundleFileExists(cached.localPath));
+    const cachedFileReady =
+      cachedFileExists && (await isCachedBundleUsable(cached.localPath));
     const shouldUpdate =
       options?.force === true ||
       needsUpdate(feature, cached) ||

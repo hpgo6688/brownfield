@@ -10,7 +10,8 @@ import {
   checkAndUpdateFeature,
   getCachedFeatureVersion,
 } from '../../src/features/bundleUpdater';
-import { bumpOtaBundleRevision, getForceOtaInDev } from '../../src/features/remoteConfig';
+import { applyRemoteFeatureUpdates } from '../../src/features/featureReload';
+import { getForceOtaInDev } from '../../src/features/remoteConfig';
 import { remoteFeatureIds } from './featureMeta';
 import { RemoteScreenShell } from './RemoteScreenShell';
 
@@ -42,14 +43,18 @@ export default function PromoScreen() {
       );
 
       const updated = results.filter(result => result.updated);
-      if (getForceOtaInDev()) {
-        bumpOtaBundleRevision();
+      if (updated.length > 0) {
+        const ids = updated.map(item => item.featureId).join(', ');
+        applyRemoteFeatureUpdates(updated.map(item => item.featureId));
+        if (getForceOtaInDev()) {
+          setUpdateMessage(`已更新 ${ids}，正在重载…`);
+          return;
+        }
+        setUpdateMessage(`已更新 ${ids}。切换到 OTA 模式后生效`);
+        return;
       }
-      setUpdateMessage(
-        updated.length > 0
-          ? `已更新 ${updated.map(item => item.featureId).join(', ')}`
-          : '已是最新版本',
-      );
+
+      setUpdateMessage('已是最新版本');
     } catch (error) {
       const message = error instanceof Error ? error.message : '检查更新失败';
       setUpdateMessage(message);

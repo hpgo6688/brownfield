@@ -122,6 +122,31 @@ export async function cachedBundleFileExists(localPath: string): Promise<boolean
   return RNFS.exists(path);
 }
 
+const MIN_USABLE_BUNDLE_BYTES = 1500;
+
+export async function isCachedBundleUsable(localPath: string): Promise<boolean> {
+  const RNFS = getRNFS();
+  if (!RNFS) {
+    return false;
+  }
+
+  const path = normalizeLocalPath(localPath);
+  if (!(await RNFS.exists(path))) {
+    return false;
+  }
+
+  type RNFSStatModule = RNFSModule & {
+    stat: (path: string) => Promise<{ size: number }>;
+  };
+  const stat = await (RNFS as RNFSStatModule).stat(path);
+  if (stat.size < MIN_USABLE_BUNDLE_BYTES) {
+    return false;
+  }
+
+  const code = await RNFS.readFile(path, 'utf8');
+  return code.includes('registerFeature') && /__r\(\d+\);/.test(code);
+}
+
 export async function readCachedMetadata(
   featureId: string,
 ): Promise<CachedFeatureMetadata | null> {

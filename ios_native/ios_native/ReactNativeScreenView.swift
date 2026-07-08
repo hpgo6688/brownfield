@@ -27,19 +27,63 @@ private struct ReactNativeScreenContainer: View {
     let moduleName: String
     let title: String
     let initialProperties: [String: Any]
+    let showsDevOtaModeToggle: Bool
+
+    @State private var reloadToken = UUID()
+    @State private var isOtaMode = DevOtaModeStore.isOtaMode
 
     var body: some View {
         EmbeddedReactNativeView(
             moduleName: moduleName,
-            initialProperties: initialProperties
+            initialProperties: currentInitialProperties
         )
+        .id(reloadToken)
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.bar, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
+        .toolbar {
+            #if DEBUG
+            if showsDevOtaModeToggle {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        handleDevOtaModeToggle()
+                    } label: {
+                        Text(isOtaMode ? "OTA" : "Metro")
+                            .font(.caption.bold())
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(isOtaMode ? Color.green.opacity(0.15) : Color.blue.opacity(0.15))
+                            .foregroundStyle(isOtaMode ? Color.green : Color.blue)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .accessibilityLabel(isOtaMode ? "OTA 模式，点击切换为 Metro" : "Metro 模式，点击切换为 OTA")
+                }
+            }
+            #endif
+        }
         .onReceive(NotificationCenter.default.publisher(for: .popToNative)) { _ in
             dismiss()
         }
+    }
+
+    private var currentInitialProperties: [String: Any] {
+        var props = initialProperties
+        #if DEBUG
+        if showsDevOtaModeToggle {
+            props["devOtaMode"] = isOtaMode
+        }
+        #endif
+        return props
+    }
+
+    private func handleDevOtaModeToggle() {
+        let nextOta = DevOtaModeStore.toggle()
+        isOtaMode = nextOta
+        reloadToken = UUID()
+
+        let payload = "{\"type\":\"reloadFeatureRuntime\",\"devOtaMode\":\(nextOta ? "true" : "false")}"
+        ReactNativeBrownfield.shared.postMessage(payload)
     }
 }
 
@@ -52,7 +96,8 @@ struct LocalReactNativeScreenView: View {
         ReactNativeScreenContainer(
             moduleName: moduleName,
             title: title,
-            initialProperties: [:]
+            initialProperties: [:],
+            showsDevOtaModeToggle: false
         )
     }
 }
@@ -70,7 +115,8 @@ struct RemoteReactNativeScreenView: View {
             initialProperties: [
                 "featureId": featureId,
                 "manifestUrl": manifestURL.absoluteString,
-            ]
+            ],
+            showsDevOtaModeToggle: true
         )
     }
 }
