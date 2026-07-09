@@ -62,13 +62,9 @@ export async function probeOtaFastPath(
 }
 
 /**
- * Same-session OTA re-entry: render immediately when live OTA registry survives
- * remount (segment modules remain from the prior OTA visit). Never skips native
- * load — cache-only restore is handled in bundleLoader after segment eval.
+ * Synchronous probe for same-session OTA re-entry (useState initializer / first paint).
  */
-export async function tryInstantOtaReentry(
-  featureId: string,
-): Promise<ComponentType | null> {
+export function peekInstantOtaReentry(featureId: string): ComponentType | null {
   if (!wasOtaFeatureLoadedThisSession(featureId)) {
     return null;
   }
@@ -81,7 +77,18 @@ export async function tryInstantOtaReentry(
     return null;
   }
 
-  const live = getFeatureComponent(featureId, { otaOnly: true });
+  return getFeatureComponent(featureId, { otaOnly: true });
+}
+
+/**
+ * Same-session OTA re-entry: render immediately when live OTA registry survives
+ * remount (segment modules remain from the prior OTA visit). Never skips native
+ * load — cache-only restore is handled in bundleLoader after segment eval.
+ */
+export async function tryInstantOtaReentry(
+  featureId: string,
+): Promise<ComponentType | null> {
+  const live = peekInstantOtaReentry(featureId);
   if (live) {
     if (__DEV__) {
       console.log(`[OTA] instant re-entry feature=${featureId} (live registry)`);

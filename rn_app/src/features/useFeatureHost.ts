@@ -16,7 +16,7 @@ import {
   markOtaFeatureLoadedThisSession,
   wasOtaFeatureLoadedThisSession,
 } from './otaSessionLoad';
-import { tryInstantOtaReentry } from './otaFeatureReuse';
+import { peekInstantOtaReentry, tryInstantOtaReentry } from './otaFeatureReuse';
 import { useOtaUpdatePoller } from './otaUpdatePoller';
 import { fetchFeatureById } from './manifest';
 import {
@@ -154,6 +154,10 @@ async function refreshOtaEntryInBackground(
       return;
     }
 
+    if (!updateResult.updated) {
+      return;
+    }
+
     await loadFeatureBundle(updateResult.feature, {
       localPath: updateResult.bundlePath,
       otaMode: true,
@@ -165,6 +169,17 @@ async function refreshOtaEntryInBackground(
       console.warn(`[OTA] background re-entry refresh failed for ${featureId}`, error);
     }
   }
+}
+
+function initialOtaScreen(
+  featureId: string | undefined,
+  devOtaMode: boolean | undefined,
+): ComponentType | null {
+  if (!featureId || (__DEV__ && devOtaMode === false)) {
+    return null;
+  }
+
+  return peekInstantOtaReentry(featureId);
 }
 
 export type UseFeatureHostOptions = {
@@ -180,10 +195,16 @@ export function useFeatureHost({
   devOtaMode,
 }: UseFeatureHostOptions) {
   const otaBundleRevision = useOtaBundleRevision();
-  const [Screen, setScreen] = useState<ComponentType | null>(null);
+  const [Screen, setScreen] = useState<ComponentType | null>(() =>
+    initialOtaScreen(featureId, devOtaMode),
+  );
   const [error, setError] = useState<FeatureLoadError | null>(null);
-  const [otaModeActive, setOtaModeActive] = useState(false);
-  const [screenReady, setScreenReady] = useState(false);
+  const [otaModeActive, setOtaModeActive] = useState(
+    () => !__DEV__ || devOtaMode !== false,
+  );
+  const [screenReady, setScreenReady] = useState(
+    () => initialOtaScreen(featureId, devOtaMode) !== null,
+  );
 
   const poll = useOtaUpdatePoller({
     featureId: featureId ?? '',

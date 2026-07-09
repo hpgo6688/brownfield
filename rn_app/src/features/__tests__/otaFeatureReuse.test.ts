@@ -9,7 +9,7 @@ import {
   wasMetroFeatureLoadedThisSession,
   wasOtaFeatureLoadedThisSession,
 } from '../otaSessionLoad';
-import { probeOtaFastPath, tryInstantOtaReentry } from '../otaFeatureReuse';
+import { probeOtaFastPath, peekInstantOtaReentry, tryInstantOtaReentry } from '../otaFeatureReuse';
 
 jest.mock('../bundleCache', () => ({
   readCachedMetadata: jest.fn(),
@@ -105,6 +105,29 @@ describe('probeOtaFastPath', () => {
     mockShouldBust.mockReturnValue(true);
 
     await expect(probeOtaFastPath('order')).resolves.toBeNull();
+  });
+});
+
+describe('peekInstantOtaReentry', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockWasOtaSession.mockReturnValue(true);
+    mockWasMetroSession.mockReturnValue(false);
+    getFeatureSource.mockReturnValue('ota');
+    getFeatureComponent.mockReturnValue(null);
+  });
+
+  it('returns live registry synchronously without disk probe', () => {
+    getFeatureComponent.mockReturnValue(mockComponent);
+
+    expect(peekInstantOtaReentry('order')).toBe(mockComponent);
+    expect(mockReadCachedMetadata).not.toHaveBeenCalled();
+  });
+
+  it('returns null when session mark is missing', () => {
+    mockWasOtaSession.mockReturnValue(false);
+
+    expect(peekInstantOtaReentry('order')).toBeNull();
   });
 });
 

@@ -249,6 +249,7 @@ describe('matchesRemoteRelease bootstrap', () => {
 });
 
 describe('formatFeatureLoadError', () => {
+  it('surfaces load/register failure when versions match', () => {
     const message = formatFeatureLoadError('order', 'split bundle entry failed for "order"', {
       remoteVersion: '0.0.6',
       localVersion: '0.0.6',
