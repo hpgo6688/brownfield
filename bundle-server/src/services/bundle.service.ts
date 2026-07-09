@@ -14,6 +14,50 @@ export function computeSha256(buffer: Buffer): string {
   return `sha256:${digest}`;
 }
 
+type ReleaseSizeSource = {
+  sizeBytes?: number | null;
+  filename: string;
+};
+
+export async function resolveReleaseSizeBytes(
+  release: ReleaseSizeSource,
+): Promise<number | null> {
+  if (release.sizeBytes != null) {
+    return release.sizeBytes;
+  }
+
+  const filePath = path.join(config.bundlesDir, release.filename);
+  try {
+    const stat = await fs.stat(filePath);
+    return stat.size;
+  } catch {
+    return null;
+  }
+}
+
+async function enrichReleaseForAdmin<T extends ReleaseSizeSource>(release: T) {
+  const sizeBytes = await resolveReleaseSizeBytes(release);
+  return { ...release, sizeBytes };
+}
+
+export async function enrichFeatureForAdmin<
+  T extends {
+    activeRelease: ReleaseSizeSource | null;
+    releases: ReleaseSizeSource[];
+  },
+>(feature: T): Promise<T> {
+  const [activeRelease, releases] = await Promise.all([
+    feature.activeRelease ? enrichReleaseForAdmin(feature.activeRelease) : null,
+    Promise.all(feature.releases.map(enrichReleaseForAdmin)),
+  ]);
+
+  return {
+    ...feature,
+    activeRelease,
+    releases,
+  };
+}
+
 export async function createReleaseFromUpload(params: {
   featureId: string;
   version: string;
@@ -33,6 +77,7 @@ export async function createReleaseFromUpload(params: {
   }
 
   const hash = computeSha256(buffer);
+  const sizeBytes = buffer.byteLength;
   const filename = `ota_${featureId}.${version}.ios.jsbundle`;
   const filePath = path.join(config.bundlesDir, filename);
 
@@ -48,11 +93,13 @@ export async function createReleaseFromUpload(params: {
       version,
       hash,
       filename,
+      sizeBytes,
       notes,
     },
     update: {
       hash,
       filename,
+      sizeBytes,
       notes,
     },
   });
@@ -76,14 +123,16 @@ export async function activateRelease(featureId: string, releaseId: string) {
     throw new Error('Release not found for this feature');
   }
 
-  return prisma.feature.update({
-    where: { id: featureId },
-    data: { activeReleaseId: release.id },
-    include: {
-      activeRelease: true,
-      releases: { orderBy: { createdAt: 'desc' } },
-    },
-  });
+  return enrichFeatureForAdmin(
+    await prisma.feature.update({
+      where: { id: featureId },
+      data: { activeReleaseId: release.id },
+      include: {
+        activeRelease: true,
+        releases: { orderBy: { createdAt: 'desc' } },
+      },
+    }),
+  );
 }
 
 export async function rollbackFeature(featureId: string, releaseId: string) {
@@ -127,13 +176,15 @@ export async function deleteRelease(featureId: string, releaseId: string) {
     }
   }
 
-  return prisma.feature.findUniqueOrThrow({
-    where: { id: featureId },
-    include: {
-      activeRelease: true,
-      releases: { orderBy: { createdAt: 'desc' } },
-    },
-  });
+  return enrichFeatureForAdmin(
+    await prisma.feature.findUniqueOrThrow({
+      where: { id: featureId },
+      include: {
+        activeRelease: true,
+        releases: { orderBy: { createdAt: 'desc' } },
+      },
+    }),
+  );
 }
 
 export async function toggleFeature(featureId: string, enabled?: boolean) {
@@ -142,24 +193,28 @@ export async function toggleFeature(featureId: string, enabled?: boolean) {
     throw new Error('Feature not found');
   }
 
-  return prisma.feature.update({
-    where: { id: featureId },
-    data: { enabled: enabled ?? !feature.enabled },
-    include: {
-      activeRelease: true,
-      releases: { orderBy: { createdAt: 'desc' } },
-    },
-  });
+  return enrichFeatureForAdmin(
+    await prisma.feature.update({
+      where: { id: featureId },
+      data: { enabled: enabled ?? !feature.enabled },
+      include: {
+        activeRelease: true,
+        releases: { orderBy: { createdAt: 'desc' } },
+      },
+    }),
+  );
 }
 
 export async function listFeaturesAdmin() {
-  return prisma.feature.findMany({
+  const features = await prisma.feature.findMany({
     include: {
       activeRelease: true,
       releases: { orderBy: { createdAt: 'desc' } },
     },
     orderBy: { id: 'asc' },
   });
+
+  return Promise.all(features.map(enrichFeatureForAdmin));
 }
 
 export async function createFeature(params: {
@@ -182,19 +237,21 @@ export async function createFeature(params: {
     throw new Error('Feature already exists');
   }
 
-  return prisma.feature.create({
-    data: {
-      id,
-      title,
-      icon: icon ?? 'square.grid.2x2',
-      moduleName,
-      metroEntry,
-      minAppVersion: minAppVersion ?? '1.0.0',
-      enabled: enabled ?? true,
-    },
-    include: {
-      activeRelease: true,
-      releases: { orderBy: { createdAt: 'desc' } },
-    },
-  });
+  return enrichFeatureForAdmin(
+    await prisma.feature.create({
+      data: {
+        id,
+        title,
+        icon: icon ?? 'square.grid.2x2',
+        moduleName,
+        metroEntry,
+        minAppVersion: minAppVersion ?? '1.0.0',
+        enabled: enabled ?? true,
+      },
+      include: {
+        activeRelease: true,
+        releases: { orderBy: { createdAt: 'desc' } },
+      },
+    }),
+  );
 }

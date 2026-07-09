@@ -299,6 +299,7 @@ async function main() {
       }
 
       const hash = sha256File(outputPath);
+      const sizeBytes = fs.statSync(outputPath).size;
       buildManifest.bundles.push({
         featureId: bundle.featureId,
         segmentId: bundle.segmentId,
@@ -306,6 +307,7 @@ async function main() {
         version: bundle.featureId ? releaseVersion : null,
         file: bundle.output,
         hash,
+        sizeBytes,
       });
     }
   } finally {

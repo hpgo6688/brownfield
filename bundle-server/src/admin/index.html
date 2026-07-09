@@ -767,6 +767,23 @@
     let features = [];
     let selectedId = ADD_ID;
 
+    function formatBytes(sizeBytes) {
+      if (sizeBytes == null || Number.isNaN(sizeBytes)) {
+        return '—';
+      }
+      if (sizeBytes >= 1024 * 1024) {
+        return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+      }
+      return `${(sizeBytes / 1024).toFixed(1)} KB`;
+    }
+
+    function formatBytesTitle(sizeBytes) {
+      if (sizeBytes == null || Number.isNaN(sizeBytes)) {
+        return '';
+      }
+      return `${sizeBytes.toLocaleString()} bytes`;
+    }
+
     function toast(message) {
       toastEl.textContent = message;
       toastEl.classList.add('show');
@@ -814,6 +831,8 @@
       const featureItems = features.map(feature => {
         const active = feature.activeRelease;
         const version = active ? active.version : '—';
+        const sizeLabel =
+          active && active.sizeBytes != null ? ` · ${formatBytes(active.sizeBytes)}` : '';
         return `
           <button
             type="button"
@@ -824,7 +843,7 @@
             <span class="sidebar-item-meta">${feature.id}</span>
             <span class="sidebar-item-footer">
               <span class="badge ${feature.enabled ? 'on' : 'off'}">${feature.enabled ? '已启用' : '已禁用'}</span>
-              <span class="sidebar-item-meta">v${version}</span>
+              <span class="sidebar-item-meta" title="${active ? formatBytesTitle(active.sizeBytes) : ''}">v${version}${sizeLabel}</span>
             </span>
           </button>`;
       }).join('');
@@ -907,6 +926,7 @@
               <strong>${release.version}</strong>
               ${isActive ? ' <span class="badge on">线上</span>' : ''}
             </td>
+            <td title="${formatBytesTitle(release.sizeBytes)}">${formatBytes(release.sizeBytes)}</td>
             <td><code>${release.hash}</code></td>
             <td style="color:var(--text-muted);font-size:12px">${new Date(release.createdAt).toLocaleString()}</td>
             <td>
@@ -944,9 +964,9 @@
           <div class="table-wrap">
             <table>
               <thead>
-                <tr><th>版本</th><th>Hash</th><th>发布时间</th><th>操作</th></tr>
+                <tr><th>版本</th><th>大小</th><th>Hash</th><th>发布时间</th><th>操作</th></tr>
               </thead>
-              <tbody>${rows || '<tr class="empty-row"><td colspan="4">暂无发布记录，请上传 bundle</td></tr>'}</tbody>
+              <tbody>${rows || '<tr class="empty-row"><td colspan="5">暂无发布记录，请上传 bundle</td></tr>'}</tbody>
             </table>
           </div>
           <form data-upload="${feature.id}">
