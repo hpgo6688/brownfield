@@ -1,52 +1,49 @@
-# OTA 立即更新后 unknown module 517556614
+# OTA shared split unknown module（立即更新）
 
 **Date**: 2026-07-09
 **Status**: Fixed
-**Scope**: OTA shared split · 立即更新 · order/promo navigation
+**Scope**: OTA shared split · 立即更新 · navigation · components
 
 ## 问题描述
 
-- **现象**：点击 Banner「立即更新」（0.0.8 → 0.0.9）后白屏/报错  
-  `Requiring unknown module "517556614"`、`remoteStackScreenOptions of undefined`
-- **触发条件**：DEV OTA 模式，`DevSettings.reload()` 后加载新 shared + feature segment
-- **影响范围**：所有使用 `remoteStackScreenOptions` / `RemoteRootHeaderBack` 的 Remote feature
+- **现象**：OTA 加载/「立即更新」后报错  
+  - `unknown module "517556614"` → `remoteStackScreenOptions of undefined`  
+  - `unknown module "103560400"` → `OrderListScreen` 渲染失败
+- **触发条件**：DEV OTA + `DevSettings.reload()`；或冷启动 OTA（无 Metro 预热）
+- **影响范围**：order / promo Remote 页面
 
 ## 根因分析
 
-`build-bundles.js` 将 `screens/remote/navigation/*` 标为 **shared-owned**，feature split 会排除这些模块，仅通过 numeric module id 引用。
+`build-bundles.js` 将 `screens/remote/navigation/*` 与 `screens/remote/components/*` 标为 **shared-owned**，feature split 排除这些模块，仅通过 numeric module id 引用。
 
-但 `bundles/ota_shared/index.js` 未 import `remoteStackScreenOptions` 等 navigation 工具，导致：
+但 `bundles/ota_shared/index.js` 未 import 对应模块 → shared segment 未定义这些 id → split-audit 标为 **main-only**。Metro 首次进入可能碰巧由主包注册；全量 reload 后 id 消失。
 
-1. shared segment **未定义** module `517556614`
-2. split-audit 将其标为 **main-only** 外部依赖
-3. 首次从 Metro 进入 OTA（`afterMetro=true`）时，Metro 主包碰巧已注册该模块 → 看似正常
-4. 「立即更新」全量 reload 后主包不再提供该 id → **unknown module**
+| Module id | 模块 |
+|-----------|------|
+| `517556614` | `remoteStackScreenOptions` / navigation |
+| `103560400` | `screens/remote/components` |
 
 ## 解决方案
 
-1. 在 `ota_shared/index.js` 预热 `remoteStackScreenOptions`、`RemoteRootHeaderBack`
-2. `isSharedOwnedBySplit` 增加 `react-native-safe-area-context`（`RemoteScreenShell` 依赖）
-3. `applyUpdate` 在 `DevSettings.reload()` 前先 `ensureSharedBundleCached`，并清除 shared session 标记
+1. **`ota_shared/index.js`** — warm navigation + components（`RemoteHero`、`OrderList`、`PromoList`）
+2. **`build-bundles.js`** — `react-native-safe-area-context` 归入 shared
+3. **`otaUpdatePoller.ts`** — reload 前 `ensureSharedBundleCached` + 清 shared session
+4. **`otaSplitHostPreload.ts`** — DEV 预加载 `screens/remote/components`
 
 **关键变更**：
 
-- `rn_app/bundles/ota_shared/index.js` — warm navigation 模块
-- `rn_app/scripts/build-bundles.js` — safe-area-context 归属 shared
-- `rn_app/src/features/otaUpdatePoller.ts` — reload 前预缓存 shared
+- `rn_app/bundles/ota_shared/index.js`
+- `rn_app/scripts/build-bundles.js`
+- `rn_app/src/features/otaUpdatePoller.ts`
+- `rn_app/src/features/otaSplitHostPreload.ts`
 
 ## 验证方式
 
-- [x] `build:bundles` split-audit：module `517556614` 在 shared 中定义，order 通过 shared 引用
-- [ ] 发布 **0.0.10** 后：order 0.0.8 → 立即更新 → 0.0.10 正常渲染
-- [ ] 冷启动 OTA order（无 Metro 预热）正常
+- [x] split-audit：`517556614`、`103560400` 由 shared 定义，order 通过 shared 引用
+- [x] 发布 **0.0.12+**（当前 active **0.0.13**）
+- [ ] 用户确认：立即更新 + 冷启动 OTA 无 unknown module
 
 ## 后续建议
 
-- split-audit 对 feature bundle 的 main-only 依赖 > 0 时在 release 构建 fail
-- 0.0.9–0.0.11 shared/order 对 `remoteStackScreenOptions`（517556614）有缺陷；0.0.10–0.0.11 仍缺 `components`（103560400）→ 请使用 **0.0.12+**
-
-### 补充（0.0.12）
-
-- **103560400** = `screens/remote/components`（`RemoteHero` / `OrderList` / `PromoList`）
-- 同上：shared-owned 但未 warm → 立即更新 reload 后 unknown module
-- 修复：`ota_shared/index.js` import components；DEV 下 `otaSplitHostPreload` 预加载 components
+- release 构建：feature bundle 存在非 core 的 main-only 依赖时 fail
+- 缺陷版本：**0.0.8–0.0.11**；修复版本：**0.0.12+**

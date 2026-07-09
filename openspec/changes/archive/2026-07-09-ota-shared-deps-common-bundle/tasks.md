@@ -25,8 +25,8 @@
 
 - [x] 4.1 Unit tests: load order (shared before feature), legacy fallback
 - [x] 4.2 `npm run build:bundles:dev` — manifest lists shared + features; size thresholds logged
-- [ ] 4.3 Manual: cold OTA order → promo → back → re-entry; no `unknown module`
-- [ ] 4.4 Manual: upload shared + features vNext together; Admin shows sizes
+- [x] 4.3 Manual: cold OTA order → promo → back → re-entry; no `unknown module`
+- [x] 4.4 Manual: upload shared + features vNext together; Admin shows sizes
 
 ## 5. Documentation
 
