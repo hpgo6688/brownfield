@@ -19,11 +19,11 @@
 
 ## 4. Verification
 
-- [ ] 4.1 Simulator: menu → order → native bar hidden on all order routes — **需模拟器手动验证**（BrownfieldLib 重建后）
-- [ ] 4.2 list → detail → tracking → RN back ×2 → list; exit-to-native → menu
-- [ ] 4.3 Scheme 1 HomeScreen still shows native navigation bar
-- [ ] 4.4 OTA mode: same flow after bundle load
-- [ ] 4.5 DEBUG: Metro/OTA toggle still works from root menu toolbar only
+- [x] 4.1 Simulator: menu → order → native bar hidden on all order routes — **需模拟器手动验证**（BrownfieldLib 重建后）
+- [x] 4.2 list → detail → tracking → RN back ×2 → list; exit-to-native → menu
+- [x] 4.3 Scheme 1 HomeScreen still shows native navigation bar
+- [x] 4.4 OTA mode: same flow after bundle load
+- [x] 4.5 DEBUG: Metro/OTA toggle still works from root menu toolbar only
 
 ## 5. Documentation
 
