@@ -198,6 +198,8 @@ rn_app/ios/.brownfield/package/build/
 
 ## 团队开发：壳打一次，同事只 `npm start`
 
+> **协作机制全文：** [docs/collaboration.md](docs/collaboration.md)（角色边界、依赖分层、Capability Request、技术护栏）
+
 你说的模式完全成立，也是 brownfield 团队里常见的做法：
 
 | 角色 | 做什么 | 频率 |
@@ -265,7 +267,10 @@ cd rn_app && npm install && npm start
 ## 参考
 
 - [SOP 操作手册](docs/sop.md)
+- [Brownfield 平台（基站）设计方法](docs/platform-design.md)
+- [Brownfield 团队协作机制](docs/collaboration.md)
 - [多 Bundle 方案（Split Bundle / Re.Pack / 多 XCFramework）](docs/multi-bundle.md)
 - [Remote 远程业务块（Split Bundle + manifest + OTA）](docs/dynamic-multi-bundle.md)
 - [OTA Bundle 压缩与体积优化路线（规划）](docs/ota-bundle-compression-roadmap.md)
+- [OTA 体积优化 TODO](docs/TODO.md)
 - [iOS Integration 官方文档](https://oss.callstack.com/react-native-brownfield/docs/getting-started/ios)

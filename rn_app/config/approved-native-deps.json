@@ -1,0 +1,21 @@
+{
+  "$comment": "Production dependency tree: native packages must appear in platformPackages or approvedNativePackages. Shell maintainer updates this when adding L2/L3 deps. See docs/collaboration.md.",
+  "platformPackages": [
+    "react",
+    "react-native"
+  ],
+  "approvedNativePackages": [
+    "@callstack/react-native-brownfield",
+    "react-native-fs",
+    "react-native-gesture-handler",
+    "react-native-safe-area-context",
+    "react-native-screens"
+  ],
+  "notes": {
+    "@callstack/react-native-brownfield": "Brownfield runtime — shell platform",
+    "react-native-fs": "OTA bundle sandbox read/write",
+    "react-native-gesture-handler": "Remote React Navigation gestures",
+    "react-native-safe-area-context": "Remote safe area insets",
+    "react-native-screens": "Remote native-stack screens"
+  }
+}

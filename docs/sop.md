@@ -1,6 +1,6 @@
 # SOP 操作手册
 
-本文档是 **native-app-multi-rn-bundle** 项目的标准操作流程（SOP），面向日常开发、Remote OTA 发版、原生壳维护与故障排查。技术背景见 [README.md](../README.md)、[multi-bundle.md](./multi-bundle.md)、[dynamic-multi-bundle.md](./dynamic-multi-bundle.md)。
+本文档是 **native-app-multi-rn-bundle** 项目的标准操作流程（SOP），面向日常开发、Remote OTA 发版、原生壳维护与故障排查。技术背景见 [README.md](../README.md)、[platform-design.md](./platform-design.md)、[multi-bundle.md](./multi-bundle.md)、[dynamic-multi-bundle.md](./dynamic-multi-bundle.md)。**团队分工、依赖分层、Capability Request** 见 [collaboration.md](./collaboration.md)。
 
 ---
 
@@ -23,6 +23,8 @@
 | **RN 开发者** | 改 JS/TS、`npm start`、Metro 热重载 | 日常 |
 | **Remote 业务开发者** | 改 `screens/remote/`、发 OTA 子 bundle | 按需 |
 | **服务端维护者** | 运维 `bundle-server`、上传/回滚 bundle、管理 manifest | 发版 / 运维时 |
+
+完整协作机制（平台区/业务区、依赖 L1/L2/L3、禁止自建 RN 工程）见 [collaboration.md](./collaboration.md)。
 
 ### 1.3 两种 RN 入口（勿混淆）
 
@@ -153,8 +155,11 @@ Remote 根页「← 菜单」调用 `NativeShellNavigation.popToNative()`（Brow
 发版前可跑：
 
 ```bash
-cd rn_app && npm run verify:ota-scope
+cd rn_app && npm run verify
+# 或单独：verify:ota-scope / verify:native-deps
 ```
+
+`verify:native-deps` 检测生产依赖树中 **未批准的 native npm 包**；见 [collaboration.md](./collaboration.md#native-依赖检测verifynative-deps)。
 
 ---
 
@@ -415,7 +420,7 @@ cd rn_app && npm run brownfield:package:ios
 
 # Remote 子 bundle
 cd rn_app && npm run build:bundles:dev   # 日常；正式发版用 build:bundles
-cd rn_app && npm run verify:ota-scope
+cd rn_app && npm run verify
 
 # bundle-server
 cd bundle-server && npm run db:seed      # 首次或重置 DB 后

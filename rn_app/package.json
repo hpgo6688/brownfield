@@ -11,6 +11,9 @@
     "build:bundles": "node scripts/build-bundles.js",
     "build:bundles:dev": "node scripts/build-bundles.js --dev",
     "verify:ota-scope": "node scripts/verify-ota-scope.js",
+    "verify:native-deps": "node scripts/verify-native-deps.js",
+    "verify:native-deps:audit": "node scripts/verify-native-deps.js --audit",
+    "verify": "npm run verify:ota-scope && npm run verify:native-deps",
     "brownfield:package:ios": "brownfield package:ios --configuration Release --add-spm-package",
     "brownfield:package:ios:debug": "brownfield package:ios --configuration Debug --add-spm-package",
     "brownfield:package:ios:debug:sim": "brownfield package:ios --configuration Debug --add-spm-package --destination simulator"

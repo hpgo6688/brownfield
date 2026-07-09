@@ -2,6 +2,7 @@
 
 **Date:** 2026-07-09  
 **Status:** 规划（待评估）  
+**任务清单：** [TODO.md](./TODO.md)  
 **相关：** [OTA 公共 split](./dynamic-multi-bundle.md#ota-公共-splitota_shared)、[shared split 实施记录](./fixes/2026-07-09-ota-shared-deps-bundle-split.md)
 
 ## 背景
