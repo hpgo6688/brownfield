@@ -30,6 +30,8 @@ Introduce **`ota_shared.<version>.ios.jsbundle`** (segment **0**):
 
 Second feature entry saves re-downloading shared segment. Further graph tuning needed to hit ~500KB feature target (e.g. exclude `registerFeature` infra from feature splits).
 
+**后续：** 若体积仍不满足弱网 / 成本目标，见 [OTA Bundle 压缩与体积优化路线](../ota-bundle-compression-roadmap.md)（HTTP 传输压缩优先于磁盘压缩）。
+
 ## Upload contract
 
 Upload **shared + order + promo** at the same release version:

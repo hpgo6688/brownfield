@@ -79,6 +79,8 @@ flowchart LR
 
 客户端：`ensureSharedBundleCached` → `SplitBundleLoader.load(shared, 0)` → 再 load feature。Manifest 顶层 `sharedBundle` 字段；无该字段时走 legacy 单体 split。
 
+> **体积与压缩：** 当前上传/下载均为未压缩 `.jsbundle`。shared split 解决**结构性重复**；若 payload 继续增大，传输层 gzip/brotli 为优先候选。路线与评估项见 [ota-bundle-compression-roadmap.md](./ota-bundle-compression-roadmap.md)。
+
 ## Remote 双路径架构（Metro dev · OTA upload）
 
 Remote 业务页有 **两条互不影响的源码路径**。搞混目录是常见误操作：改了 OTA 路径却等 Metro HMR，或改了 Metro 路径却期望 upload 后生效。
