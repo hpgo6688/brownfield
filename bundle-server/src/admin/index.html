@@ -211,6 +211,10 @@
       background: transparent;
       cursor: pointer;
       transition: background .15s, border-color .15s;
+      text-decoration: none;
+      color: inherit;
+      font: inherit;
+      box-sizing: border-box;
     }
 
     .sidebar-item:hover:not(.active) {
@@ -620,6 +624,13 @@
       letter-spacing: 0.04em;
     }
 
+    th:last-child,
+    td:last-child {
+      min-width: 200px;
+      width: 200px;
+      white-space: nowrap;
+    }
+
     tr:last-child td { border-bottom: none; }
 
     tbody tr:hover td { background: #fafbfc; }
@@ -767,6 +778,48 @@
     let features = [];
     let selectedId = ADD_ID;
 
+    const urlFeature = new URLSearchParams(window.location.search).get('feature');
+    if (urlFeature != null) {
+      selectedId = urlFeature;
+    }
+
+    function buildFeatureUrl(featureId) {
+      const url = new URL(window.location.href);
+      if (featureId === ADD_ID) {
+        url.searchParams.delete('feature');
+      } else {
+        url.searchParams.set('feature', featureId);
+      }
+      return url.pathname + url.search;
+    }
+
+    function getFeatureIdFromUrl() {
+      return new URLSearchParams(window.location.search).get('feature');
+    }
+
+    function syncUrlToSelection(id, { replace = false } = {}) {
+      const url = new URL(window.location.href);
+      if (id === ADD_ID) {
+        url.searchParams.delete('feature');
+      } else {
+        url.searchParams.set('feature', id);
+      }
+      const href = url.pathname + url.search;
+      const state = { featureId: id };
+      if (replace) {
+        history.replaceState(state, '', href);
+      } else {
+        history.pushState(state, '', href);
+      }
+    }
+
+    function scrollSidebarItemIntoView(id) {
+      requestAnimationFrame(() => {
+        const el = featureSidebar.querySelector(`[data-sidebar-id="${CSS.escape(id)}"]`);
+        el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      });
+    }
+
     function formatBytes(sizeBytes) {
       if (sizeBytes == null || Number.isNaN(sizeBytes)) {
         return '—';
@@ -816,8 +869,8 @@
 
     function renderSidebar() {
       const addItem = `
-        <button
-          type="button"
+        <a
+          href="${buildFeatureUrl(ADD_ID)}"
           class="sidebar-item add-item${selectedId === ADD_ID ? ' active' : ''}"
           data-sidebar-id="${ADD_ID}"
         >
@@ -826,7 +879,7 @@
             <span class="sidebar-item-title">添加</span>
             <span class="sidebar-item-meta">新建 Remote 入口</span>
           </span>
-        </button>`;
+        </a>`;
 
       const featureItems = features.map(feature => {
         const active = feature.activeRelease;
@@ -834,8 +887,8 @@
         const sizeLabel =
           active && active.sizeBytes != null ? ` · ${formatBytes(active.sizeBytes)}` : '';
         return `
-          <button
-            type="button"
+          <a
+            href="${buildFeatureUrl(feature.id)}"
             class="sidebar-item${feature.id === selectedId ? ' active' : ''}"
             data-sidebar-id="${feature.id}"
           >
@@ -845,7 +898,7 @@
               <span class="badge ${feature.enabled ? 'on' : 'off'}">${feature.enabled ? '已启用' : '已禁用'}</span>
               <span class="sidebar-item-meta" title="${active ? formatBytesTitle(active.sizeBytes) : ''}">v${version}${sizeLabel}</span>
             </span>
-          </button>`;
+          </a>`;
       }).join('');
 
       const divider = features.length ? '<div class="sidebar-divider"></div>' : '';
@@ -856,9 +909,17 @@
         ${divider}
         ${featureItems}`;
 
-      featureSidebar.querySelectorAll('[data-sidebar-id]').forEach(btn => {
-        btn.addEventListener('click', () => selectItem(btn.dataset.sidebarId));
+      featureSidebar.querySelectorAll('[data-sidebar-id]').forEach(link => {
+        link.addEventListener('click', event => {
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+            return;
+          }
+          event.preventDefault();
+          selectItem(link.dataset.sidebarId);
+        });
       });
+
+      scrollSidebarItemIntoView(selectedId);
     }
 
     function renderCreateDetail() {
@@ -910,6 +971,7 @@
       });
       toast('Remote 入口已创建');
       selectedId = payload.id;
+      syncUrlToSelection(selectedId, { replace: true });
       form.reset();
       loadFeatures();
     }
@@ -918,8 +980,21 @@
       const active = feature.activeRelease;
       const releases = feature.releases || [];
 
+      const latestReleaseId = releases.length ? releases[0].id : null;
+
       const rows = releases.map(release => {
         const isActive = active && active.id === release.id;
+        const isLatest = release.id === latestReleaseId;
+        const activateBtn = isLatest
+          ? `<button ${isActive ? 'disabled' : ''} data-action="activate" data-feature="${feature.id}" data-release="${release.id}">
+              设为线上
+            </button>`
+          : '';
+        const rollbackBtn = isLatest
+          ? ''
+          : `<button class="warn" ${isActive ? 'disabled' : ''} data-action="rollback" data-feature="${feature.id}" data-release="${release.id}">
+              回滚
+            </button>`;
         return `
           <tr>
             <td>
@@ -931,12 +1006,8 @@
             <td style="color:var(--text-muted);font-size:12px">${new Date(release.createdAt).toLocaleString()}</td>
             <td>
               <div class="actions">
-                <button ${isActive ? 'disabled' : ''} data-action="activate" data-feature="${feature.id}" data-release="${release.id}">
-                  设为线上
-                </button>
-                <button class="warn" ${isActive ? 'disabled' : ''} data-action="rollback" data-feature="${feature.id}" data-release="${release.id}">
-                  回滚
-                </button>
+                ${activateBtn}
+                ${rollbackBtn}
                 <button class="danger" data-action="delete" data-feature="${feature.id}" data-release="${release.id}" data-version="${release.version}">
                   删除
                 </button>
@@ -1005,8 +1076,11 @@
         </div>`;
     }
 
-    function selectItem(id) {
+    function selectItem(id, { updateUrl = true, replaceUrl = false } = {}) {
       selectedId = id;
+      if (updateUrl) {
+        syncUrlToSelection(id, { replace: replaceUrl });
+      }
       renderSidebar();
       if (id === ADD_ID) {
         renderCreateDetail();
@@ -1090,6 +1164,7 @@
 
       if (selectedId !== ADD_ID && !features.some(f => f.id === selectedId)) {
         selectedId = features.length ? features[0].id : ADD_ID;
+        syncUrlToSelection(selectedId, { replace: true });
       }
 
       renderSidebar();
@@ -1102,6 +1177,11 @@
     }
 
     document.getElementById('refreshBtn').addEventListener('click', loadFeatures);
+
+    window.addEventListener('popstate', () => {
+      const id = getFeatureIdFromUrl() ?? ADD_ID;
+      selectItem(id, { updateUrl: false });
+    });
 
     loadFeatures().catch(error => {
       featureSidebar.innerHTML = `<div class="sidebar-empty" style="color:var(--danger)">加载失败</div>`;
