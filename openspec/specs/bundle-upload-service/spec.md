@@ -11,11 +11,14 @@ The bundle-server SHALL expose `POST /api/bundles/upload` accepting multipart fo
 
 Uploaded bundle files SHALL be written to disk under `data/bundles/` (relative to `bundle-server/`) before release metadata is updated. Files MUST remain available for `GET /bundles/<filename>` after server restart.
 
+The server SHALL persist `sizeBytes` (integer, byte length of the uploaded file) on the `BundleRelease` record at upload time.
+
 #### Scenario: Successful upload updates manifest
 
 - **WHEN** client posts a valid bundle file for an existing Remote `featureId`
 - **THEN** server stores the file under `data/bundles/`
 - **AND** computes sha256 hash of the file
+- **AND** stores `sizeBytes` equal to the uploaded file byte length on the release record
 - **AND** updates active release (version, hash, bundleUrl) in persistent storage
 - **AND** responds with HTTP 200 and updated manifest snapshot
 
@@ -37,7 +40,7 @@ Uploaded bundle files SHALL be written to disk under `data/bundles/` (relative t
 
 ### Requirement: Build script emits upload metadata for Remote bundles
 
-The `npm run build:bundles` script SHALL produce `dist/bundles/build-manifest.json` listing each **Remote sub-bundle**'s `featureId`, `version`, `hash`, and `filename`.
+The `npm run build:bundles` script SHALL produce `dist/bundles/build-manifest.json` listing each **Remote sub-bundle**'s `featureId`, `version`, `hash`, `filename`, and `sizeBytes`.
 
 Main bundle (`main.ios.jsbundle`) MAY be listed with `featureId: null` for packaging only; it is not OTA-updated via manifest.
 
@@ -45,4 +48,5 @@ Main bundle (`main.ios.jsbundle`) MAY be listed with `featureId: null` for packa
 
 - **WHEN** build completes successfully
 - **THEN** `build-manifest.json` exists and contains one entry per Remote sub-bundle (e.g. `order`, `promo`)
+- **AND** each Remote sub-bundle entry includes `sizeBytes` reflecting the output file size on disk
 
