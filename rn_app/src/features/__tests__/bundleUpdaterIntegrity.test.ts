@@ -3,6 +3,8 @@ import {
   applyPendingFeature,
   downloadAndCacheFeature,
   formatFeatureLoadError,
+  matchesRemoteRelease,
+  normalizeHash,
   verifyOtaBundleBody,
 } from '../bundleUpdater';
 import {
@@ -225,8 +227,28 @@ describe('downloadPendingFeature integrity', () => {
   });
 });
 
+describe('matchesRemoteRelease bootstrap', () => {
+  it('detects same-version hash drift as stale active', () => {
+    expect(
+      matchesRemoteRelease(
+        { version: '0.0.6', hash: 'sha256:old' },
+        { version: '0.0.6', hash: 'sha256:new' },
+      ),
+    ).toBe(false);
+  });
+
+  it('normalizes hash prefixes for comparison', () => {
+    expect(
+      matchesRemoteRelease(
+        { version: '0.0.6', hash: 'sha256:abc' },
+        { version: '0.0.6', hash: 'abc' },
+      ),
+    ).toBe(true);
+    expect(normalizeHash('sha256:abc')).toBe('abc');
+  });
+});
+
 describe('formatFeatureLoadError', () => {
-  it('shows raw cause when versions match (load/register failure)', () => {
     const message = formatFeatureLoadError('order', 'split bundle entry failed for "order"', {
       remoteVersion: '0.0.6',
       localVersion: '0.0.6',

@@ -12,9 +12,11 @@ import { clearLoadedBundlesForFeature, loadFeatureBundle } from './bundleLoader'
 import { getPersistedDevOtaMode } from './devOtaModeStore';
 import {
   clearOtaFeatureSessionMark,
+  markMetroFeatureLoadedThisSession,
   markOtaFeatureLoadedThisSession,
+  wasOtaFeatureLoadedThisSession,
 } from './otaSessionLoad';
-import { clearOtaComponentCache } from './registerFeature';
+import { tryInstantOtaReentry } from './otaFeatureReuse';
 import { useOtaUpdatePoller } from './otaUpdatePoller';
 import { fetchFeatureById } from './manifest';
 import {
@@ -140,6 +142,31 @@ async function loadOtaFeatureScreen(
   return { component, updateResult };
 }
 
+/** Background reconcile after instant re-entry (update check, no UI reset). */
+async function refreshOtaEntryInBackground(
+  featureId: string,
+  manifestUrl: string | undefined,
+  isCancelled: () => boolean,
+): Promise<void> {
+  try {
+    const updateResult = await ensureFeatureCached(featureId, { manifestUrl });
+    if (isCancelled() || !updateResult.bundlePath) {
+      return;
+    }
+
+    await loadFeatureBundle(updateResult.feature, {
+      localPath: updateResult.bundlePath,
+      otaMode: true,
+      ensureSegment: true,
+      warmReentry: true,
+    });
+  } catch (error) {
+    if (__DEV__) {
+      console.warn(`[OTA] background re-entry refresh failed for ${featureId}`, error);
+    }
+  }
+}
+
 export type UseFeatureHostOptions = {
   featureId?: string;
   manifestUrl?: string;
@@ -191,7 +218,7 @@ export function useFeatureHost({
 
         try {
           clearOtaFeatureSessionMark(featureId);
-          clearOtaComponentCache(featureId);
+          markMetroFeatureLoadedThisSession(featureId);
           clearLoadedBundlesForFeature(featureId);
           clearFeatureRegistration(featureId);
 
@@ -220,6 +247,19 @@ export function useFeatureHost({
           throw new Error(
             'OTA 模式：RNFS 未链接到 BrownfieldLib。请执行 npm run brownfield:package:ios:debug:sim 并 Clean Build。',
           );
+        }
+
+        const sessionReentry = wasOtaFeatureLoadedThisSession(featureId);
+
+        if (sessionReentry) {
+          const instant = await tryInstantOtaReentry(featureId);
+          if (instant && !cancelled) {
+            markOtaFeatureLoadedThisSession(featureId);
+            setScreen(() => instant);
+            setScreenReady(true);
+            void refreshOtaEntryInBackground(featureId, manifestUrl, () => cancelled);
+            return;
+          }
         }
 
         setScreen(null);

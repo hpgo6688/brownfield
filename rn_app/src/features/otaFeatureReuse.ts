@@ -1,3 +1,4 @@
+import type { ComponentType } from 'react';
 import {
   cachedBundleFileExists,
   isCachedBundleUsable,
@@ -5,7 +6,13 @@ import {
   type CachedFeatureMetadata,
 } from './bundleCache';
 import type { RemoteFeature } from './manifest';
-import { shouldBustOtaComponentCache } from './registerFeature';
+import { wasMetroFeatureLoadedThisSession, wasOtaFeatureLoadedThisSession } from './otaSessionLoad';
+import {
+  getFeatureComponent,
+  getFeatureSource,
+  shouldBustOtaComponentCache,
+  syncOtaRegistrationFromCache,
+} from './registerFeature';
 
 export type OtaFastPathCandidate = {
   metadata: CachedFeatureMetadata;
@@ -26,9 +33,7 @@ function metadataToFeature(metadata: CachedFeatureMetadata): RemoteFeature {
 }
 
 /**
- * Probe verified disk cache for instant OTA re-entry. Caller MUST still run
- * loadFeatureBundle({ ensureSegment: true }) before render — split segment
- * module ids (e.g. __r(745032085)) are not guaranteed to survive remount.
+ * Probe verified disk cache for same-session OTA re-entry.
  */
 export async function probeOtaFastPath(
   featureId: string,
@@ -54,6 +59,37 @@ export async function probeOtaFastPath(
     metadata: active,
     feature: metadataToFeature(active),
   };
+}
+
+/**
+ * Same-session OTA re-entry: render immediately when live OTA registry survives
+ * remount (segment modules remain from the prior OTA visit). Never skips native
+ * load — cache-only restore is handled in bundleLoader after segment eval.
+ */
+export async function tryInstantOtaReentry(
+  featureId: string,
+): Promise<ComponentType | null> {
+  if (!wasOtaFeatureLoadedThisSession(featureId)) {
+    return null;
+  }
+
+  if (wasMetroFeatureLoadedThisSession(featureId)) {
+    return null;
+  }
+
+  if (getFeatureSource(featureId) !== 'ota') {
+    return null;
+  }
+
+  const live = getFeatureComponent(featureId, { otaOnly: true });
+  if (live) {
+    if (__DEV__) {
+      console.log(`[OTA] instant re-entry feature=${featureId} (live registry)`);
+    }
+    return live;
+  }
+
+  return null;
 }
 
 /** @deprecated Use probeOtaFastPath + loadFeatureBundle(ensureSegment) instead */

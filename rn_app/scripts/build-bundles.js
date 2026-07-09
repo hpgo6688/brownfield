@@ -40,13 +40,7 @@ function isFeatureOwnedBySplit(modulePath) {
   );
 }
 
-function shouldExcludeFromSplitModule(module, mainModulePaths) {
-  const modulePath = module.path;
-
-  if (isFeatureOwnedBySplit(modulePath)) {
-    return false;
-  }
-
+function isCoreHostModule(modulePath) {
   if (
     modulePath.includes('__prelude__') ||
     modulePath.includes('/node_modules/metro-runtime/src/polyfills/require.js') ||
@@ -56,7 +50,50 @@ function shouldExcludeFromSplitModule(module, mainModulePaths) {
     return true;
   }
 
-  return mainModulePaths.has(modulePath);
+  if (/\/node_modules\/react\//.test(modulePath)) {
+    return true;
+  }
+
+  if (
+    /\/node_modules\/react-native\//.test(modulePath) &&
+    !/\/node_modules\/react-native-screens\//.test(modulePath) &&
+    !/\/node_modules\/react-native-gesture-handler\//.test(modulePath)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function shouldExcludeFromSplitModule(module, mainModulePaths, splitModulePaths) {
+  const modulePath = module.path;
+
+  if (isFeatureOwnedBySplit(modulePath)) {
+    return false;
+  }
+
+  if (isCoreHostModule(modulePath)) {
+    return true;
+  }
+
+  // Host-only modules (FeatureHost graph) stay out of split. Shared deps that
+  // the split entry also needs (e.g. use-latest-callback for React Navigation)
+  // must remain in the split — Metro dev lazy main may not register them yet.
+  if (mainModulePaths.has(modulePath) && !splitModulePaths.has(modulePath)) {
+    return true;
+  }
+
+  return false;
+}
+
+async function collectSplitModulePaths(config, entryFile) {
+  const graph = await buildGraph(config, {
+    entries: [path.join(projectRoot, entryFile)],
+    platform: 'ios',
+    dev: isDev,
+  });
+
+  return new Set([...graph.dependencies.values()].map(module => module.path));
 }
 
 async function collectMainModulePaths(config) {
@@ -117,13 +154,42 @@ async function buildBundle(metroServer, options) {
   );
 }
 
-async function createSplitMetroServer(baseConfig, mainModulePaths) {
+function auditSplitExternalDeps(bundlePath, mainBundlePath) {
+  const splitCode = fs.readFileSync(bundlePath, 'utf8');
+  const mainCode = fs.readFileSync(mainBundlePath, 'utf8');
+  const defined = code =>
+    new Set([...code.matchAll(/},(\d+),\[/g)].map(match => match[1]));
+  const splitDefined = defined(splitCode);
+  const mainDefined = defined(mainCode);
+  const external = new Set();
+
+  const modulePattern = /__d\(function[^]*?\},(\d+),\[([^\]]*)\]/g;
+  let match;
+  while ((match = modulePattern.exec(splitCode)) !== null) {
+    const deps = match[2]
+      .split(',')
+      .map(dep => dep.trim())
+      .filter(Boolean);
+    for (const dep of deps) {
+      if (!splitDefined.has(dep) && mainDefined.has(dep)) {
+        external.add(dep);
+      }
+    }
+  }
+
+  return [...external];
+}
+
+async function createSplitMetroServer(baseConfig, mainModulePaths, splitEntry) {
+  const splitModulePaths = await collectSplitModulePaths(baseConfig, splitEntry);
+  console.log(`Split module count (${splitEntry}): ${splitModulePaths.size}`);
+
   const splitConfig = mergeConfig(baseConfig, {
     serializer: {
       ...baseConfig.serializer,
       getModulesRunBeforeMainModule: () => [],
       processModuleFilter: module => {
-        return !shouldExcludeFromSplitModule(module, mainModulePaths);
+        return !shouldExcludeFromSplitModule(module, mainModulePaths, splitModulePaths);
       },
     },
   });
@@ -198,7 +264,7 @@ async function main() {
       console.log(`\n→ ${bundle.name}${bundle.split ? ' (split/modulesOnly)' : ''}`);
 
       const metroServer = bundle.split
-        ? await createSplitMetroServer(baseConfig, mainModulePaths)
+        ? await createSplitMetroServer(baseConfig, mainModulePaths, bundle.entry)
         : mainMetroServer;
 
       try {
@@ -214,6 +280,17 @@ async function main() {
 
         if (bundle.split) {
           finalizeSplitBundle(outputPath, bundle.entry);
+          const mainBundlePath = path.join(outputDir, 'main.ios.jsbundle');
+          if (fs.existsSync(mainBundlePath)) {
+            const external = auditSplitExternalDeps(outputPath, mainBundlePath);
+            if (external.length > 0) {
+              console.warn(
+                `[split-audit] ${bundle.name} still references ${external.length} main-only module id(s): ${external.slice(0, 8).join(', ')}${external.length > 8 ? '…' : ''}`,
+              );
+            } else {
+              console.log(`[split-audit] ${bundle.name} has no main-only external deps`);
+            }
+          }
         }
       } finally {
         if (bundle.split) {

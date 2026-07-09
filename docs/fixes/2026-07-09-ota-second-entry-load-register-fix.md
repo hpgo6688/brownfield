@@ -31,6 +31,7 @@
 3. Re-entry：**必须**先 `SplitBundleLoader.load()`（native segment re-eval），再立刻 `syncOtaRegistrationFromCache`；不可跳过 native load。
 4. Re-entry 跳过 3s 轮询；首次进入 bridgeless 仍短 wait 1s。
 5. Re-entry 跳过 `ensureFeatureCached` 的 manifest 网络请求。
+6. **秒开**：`tryInstantOtaReentry` 在同 session 第二次进入时先读 live registry（不 clear、不 native load），失败再 fallback 完整 load；后台 `warmReentry` 静默对账。
 
 **关键变更**：
 - `rn_app/src/features/bundleUpdater.ts` — `formatFeatureLoadError`

@@ -1,7 +1,10 @@
 import { DevSettings } from 'react-native';
 import { clearLoadedBundles, clearLoadedBundlesForFeature } from './bundleLoader';
 import { setPersistedDevOtaMode } from './devOtaModeStore';
-import { clearOtaFeatureSessionMark } from './otaSessionLoad';
+import {
+  clearOtaFeatureSessionMark,
+  clearMetroFeatureSessionMark,
+} from './otaSessionLoad';
 import { clearFeatureRegistration, clearOtaComponentCache } from './registerFeature';
 import { bumpOtaBundleRevision, getForceOtaInDev, setForceOtaInDev } from './remoteConfig';
 
@@ -15,6 +18,7 @@ export async function applyRemoteFeatureUpdates(
     clearFeatureRegistration(featureId);
     clearLoadedBundlesForFeature(featureId);
     clearOtaFeatureSessionMark(featureId);
+    clearMetroFeatureSessionMark(featureId);
   }
 
   bumpOtaBundleRevision();
@@ -29,6 +33,7 @@ export function reloadFeatureRuntime(): void {
   clearFeatureRegistration();
   clearOtaComponentCache();
   global.__OTA_LOADED_THIS_SESSION__ = new Set();
+  global.__METRO_LOADED_THIS_SESSION__ = new Set();
   DevSettings.reload();
 }
 

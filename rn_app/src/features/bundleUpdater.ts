@@ -116,6 +116,14 @@ export function formatFeatureLoadError(
     remote != null && local != null && remote !== '0.0.0' && remote === local;
 
   if (versionsMatch) {
+    if (/unknown module/i.test(cause)) {
+      return (
+        `OTA split 与主包 module 表不一致（常见于 Metro --reset-cache 后未 rebuild/upload）。\n\n` +
+        `请执行: cd rn_app && npm run build:bundles:dev，然后 upload。\n` +
+        `或 DEV 下使用 USE_METRO_BUNDLES=true。\n\n${cause}`
+      );
+    }
+
     return `OTA bundle 加载失败（本地与服务端均为 v${local}，缓存文件正常）。\n\n${cause}`;
   }
 
@@ -199,6 +207,35 @@ export function matchesRemoteRelease(
     meta.version === remote.version &&
     normalizeHash(meta.hash) === normalizeHash(remote.hash)
   );
+}
+
+/** SHA-256 hex digest of bundle bytes on disk (no sha256: prefix). */
+export async function hashBundleFileAtPath(localPath: string): Promise<string | null> {
+  try {
+    const RNFS = require('react-native-fs') as {
+      readFile: (path: string, encoding: 'utf8') => Promise<string>;
+    };
+    const body = await RNFS.readFile(normalizeLocalPath(localPath), 'utf8');
+    return sha256(body);
+  } catch {
+    return null;
+  }
+}
+
+export async function activeBundleFileMatchesRemote(
+  cached: CachedFeatureMetadata,
+  remote: Pick<RemoteFeature, 'hash'>,
+): Promise<boolean> {
+  if (remote.hash === 'sha256:unset') {
+    return false;
+  }
+
+  const digest = await hashBundleFileAtPath(cached.localPath);
+  if (!digest) {
+    return false;
+  }
+
+  return normalizeHash(remote.hash) === digest;
 }
 
 /** Verify downloaded bundle bytes before writing metadata or promoting pending → active. */
@@ -556,6 +593,32 @@ export async function ensureFeatureCached(
       const feature = await fetchFeatureById(featureId, manifestUrl, {
         forceRefresh: true,
       });
+
+      const activeFileOk = await activeBundleFileMatchesRemote(cached, feature);
+      const metaOk = matchesRemoteRelease(cached, feature);
+
+      if (!activeFileOk || !metaOk) {
+        const pending = await getPendingUpdate(featureId);
+        if (pending && matchesRemoteRelease(pending, feature)) {
+          if (__DEV__) {
+            console.log(
+              `[OTA] applying pending ${featureId}@${pending.version} (active stale: fileOk=${activeFileOk} metaOk=${metaOk})`,
+            );
+          }
+          const applied = await applyPendingFeature(featureId);
+          if (applied) {
+            return {
+              featureId,
+              feature,
+              updated: true,
+              bundlePath: applied.localPath,
+              cachedVersion: applied.version,
+            };
+          }
+        }
+
+        return checkAndUpdateFeature(featureId, options);
+      }
 
       if (needsUpdate(feature, cached)) {
         return checkAndUpdateFeature(featureId, options);

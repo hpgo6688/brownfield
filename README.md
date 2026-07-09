@@ -109,6 +109,35 @@ cd rn_app
 npm run brownfield:package:ios   # Release 包，内嵌 JS bundle
 ```
 
+### OTA split bundle 发布（Remote order / promo）
+
+改 `bundles/ota_*`、`screens/remote/order/` 或 React Navigation 依赖后，需 **构建 + upload**，OTA 模式才会拉到新包。产物目录为 `bundle-server/dist/bundles/`（不是 `rn_app/dist/`）。
+
+```bash
+# 1. 在 rn_app/package.json 写好版本号（如 0.0.7）
+
+# 2. 构建 split bundle（DEV 调试用 :dev，CI/发版用 release）
+cd rn_app
+npm run build:bundles:dev    # 或 npm run build:bundles
+
+# 3. 启动 bundle-server（若未运行）
+cd ../bundle-server
+npm run dev
+
+# 4. 上传各 Remote feature（版本号与 package.json 一致）
+./scripts/upload-bundle.sh order 0.0.7 dist/bundles/ota_order.0.0.7.ios.jsbundle
+./scripts/upload-bundle.sh promo 0.0.7 dist/bundles/ota_promo.0.0.7.ios.jsbundle
+
+# 5. 确认 manifest
+curl -s http://127.0.0.1:3001/api/manifest | jq '.features[] | {id, version, hash}'
+```
+
+**注意：**
+
+- `Metro --reset-cache` 或改 split 排除策略后，须重新 `build:bundles` + upload，否则易出现 `unknown module`。
+- 模拟器若仍用旧沙盒缓存，可 Delete App 重装，或 bump 版本号强制下载。
+- 修复记录见 [docs/fixes/2026-07-09-ota-dev-session-fixes-summary.md](docs/fixes/2026-07-09-ota-dev-session-fixes-summary.md)。
+
 ---
 
 ## 不要混淆两种运行方式

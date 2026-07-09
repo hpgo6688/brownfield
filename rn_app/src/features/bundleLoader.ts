@@ -17,8 +17,9 @@ import {
   waitForFeatureComponent,
 } from './registerFeature';
 import { getFeatureSegmentId } from './segmentRegistry';
-import { wasOtaFeatureLoadedThisSession } from './otaSessionLoad';
+import { clearMetroFeatureSessionMark, wasMetroFeatureLoadedThisSession, wasOtaFeatureLoadedThisSession } from './otaSessionLoad';
 import { executeSplitBundleEntry } from './splitBundleEntry';
+import { preloadOtaSplitHostModules } from './otaSplitHostPreload';
 import { isSplitBundleLoaderAvailable, SplitBundleLoader } from './splitBundleLoader';
 
 const loadedBundleKeys = new Set<string>();
@@ -54,7 +55,7 @@ function isLocalFileUrl(bundleUrl: string): boolean {
 async function loadFromNativeSplitBundle(
   feature: RemoteFeature,
   localPath: string,
-  options?: { ensureSegment?: boolean },
+  options?: { ensureSegment?: boolean; warmReentry?: boolean },
 ): Promise<void> {
   if (!isSplitBundleLoaderAvailable()) {
     throw new Error(
@@ -91,10 +92,13 @@ async function loadFromNativeSplitBundle(
 
   const otaReentry =
     options?.ensureSegment === true && wasOtaFeatureLoadedThisSession(feature.id);
+  const afterMetro =
+    options?.ensureSegment === true && wasMetroFeatureLoadedThisSession(feature.id);
+  const restoreRegistry = otaReentry || afterMetro;
 
   if (options?.ensureSegment) {
     clearFeatureRegistration(feature.id);
-    if (!otaReentry) {
+    if (!restoreRegistry) {
       clearOtaComponentCache(feature.id);
     }
   } else if (!isFeatureLoadedFromOta(feature.id)) {
@@ -112,19 +116,35 @@ async function loadFromNativeSplitBundle(
 
   if (__DEV__) {
     console.log(
-      `[SplitBundleLoader] load feature=${feature.id} segmentId=${segmentId} path=${path} pathChanged=${pathChanged} needsRegistration=${needsRegistration} ensureSegment=${Boolean(options?.ensureSegment)} otaReentry=${otaReentry}`,
+      `[SplitBundleLoader] load feature=${feature.id} segmentId=${segmentId} path=${path} pathChanged=${pathChanged} needsRegistration=${needsRegistration} ensureSegment=${Boolean(options?.ensureSegment)} otaReentry=${otaReentry} afterMetro=${afterMetro}`,
     );
+  }
+
+  if (
+    options?.warmReentry &&
+    restoreRegistry &&
+    isFeatureLoadedFromOta(feature.id)
+  ) {
+    loadedBundlePaths.set(feature.id, path);
+    if (__DEV__) {
+      console.log(
+        `[SplitBundleLoader] warm re-entry skip native load feature=${feature.id}`,
+      );
+    }
+    return;
+  }
+
+  if (__DEV__) {
+    preloadOtaSplitHostModules();
   }
 
   await SplitBundleLoader!.load(path, segmentId);
 
-  // Re-entry: native segment re-eval does not re-run registerFeature; restore JS
-  // registry from cache immediately after load (must not skip native load).
-  if (otaReentry) {
+  if (restoreRegistry) {
     trySyncFromCache();
   }
 
-  if (!isFeatureLoadedFromOta(feature.id) && !otaReentry) {
+  if (!isFeatureLoadedFromOta(feature.id) && !restoreRegistry) {
     await waitForFeatureComponent(feature.id, {
       otaOnly: true,
       timeoutMs: 1000,
@@ -133,12 +153,12 @@ async function loadFromNativeSplitBundle(
   }
 
   if (!isFeatureLoadedFromOta(feature.id)) {
-    const requireRegistration = options?.ensureSegment === true && !otaReentry;
+    const requireRegistration = options?.ensureSegment === true && !restoreRegistry;
     const entryOk = await executeSplitBundleEntry(path, {
       featureId: feature.id,
       requireRegistration,
     });
-    if (!entryOk && options?.ensureSegment && !otaReentry) {
+    if (!entryOk && options?.ensureSegment && !restoreRegistry) {
       throw new Error(`split bundle entry failed for "${feature.id}"`);
     }
   }
@@ -147,7 +167,7 @@ async function loadFromNativeSplitBundle(
     trySyncFromCache();
   }
 
-  if (!isFeatureLoadedFromOta(feature.id) && otaReentry) {
+  if (!isFeatureLoadedFromOta(feature.id) && restoreRegistry) {
     trySyncFromCache();
   }
 
@@ -167,6 +187,10 @@ async function loadFromNativeSplitBundle(
       activeMeta.localPath,
     );
   }
+
+  if (afterMetro) {
+    clearMetroFeatureSessionMark(feature.id);
+  }
 }
 
 /**
@@ -181,6 +205,8 @@ export async function loadFeatureBundle(
     otaMode?: boolean;
     /** Re-register native split segment even when JS registration exists (OTA re-entry). */
     ensureSegment?: boolean;
+    /** Same-session re-entry: skip native load when OTA registration is already live. */
+    warmReentry?: boolean;
   },
 ): Promise<void> {
   const localPath = options?.localPath ?? null;
@@ -206,6 +232,7 @@ export async function loadFeatureBundle(
     const path = localPath ?? feature.bundleUrl;
     await loadFromNativeSplitBundle(feature, path, {
       ensureSegment: options?.ensureSegment,
+      warmReentry: options?.warmReentry,
     });
     loadedBundleKeys.add(loadKey);
     return;
@@ -226,6 +253,7 @@ export async function loadFeatureBundle(
     const path = localPath ?? feature.bundleUrl;
     await loadFromNativeSplitBundle(feature, path, {
       ensureSegment: options?.ensureSegment,
+      warmReentry: options?.warmReentry,
     });
     loadedBundleKeys.add(loadKey);
     return;

@@ -27,12 +27,40 @@ Uploaded bundle files: `data/bundles/` (persist across server restarts; gitignor
 
 ## Upload & rollback
 
+构建产物在 **`bundle-server/dist/bundles/`**（由 `rn_app` 的 `npm run build:bundles` 写入）。
+
+### 发布流程（推荐）
+
 ```bash
-# Target Remote entry (e.g. order)
+# 1. 构建（在 rn_app 目录；版本号取自 package.json）
+cd ../rn_app
+npm run build:bundles:dev    # 日常 DEV；发版用 npm run build:bundles
+
+# 2. 上传（在 bundle-server 目录；VERSION 与 package.json 一致）
+cd ../bundle-server
+npm run dev                  # 确保服务已启动
+
+./scripts/upload-bundle.sh order 0.0.7 dist/bundles/ota_order.0.0.7.ios.jsbundle
+./scripts/upload-bundle.sh promo 0.0.7 dist/bundles/ota_promo.0.0.7.ios.jsbundle
+
+# 3. 校验 manifest
+curl -s http://127.0.0.1:3001/api/manifest | jq '.features[] | {id, version, hash}'
+```
+
+`upload-bundle.sh` 用法：
+
+```bash
+./scripts/upload-bundle.sh <featureId> <version> <bundle-file>
+# 例：./scripts/upload-bundle.sh order 0.0.7 dist/bundles/ota_order.0.0.7.ios.jsbundle
+```
+
+### curl / 回滚
+
+```bash
 curl -X POST http://127.0.0.1:3001/api/bundles/upload \
   -F featureId=order \
-  -F version=1.0.0 \
-  -F file=@../rn_app/dist/bundles/ota_order.1.0.0.ios.jsbundle
+  -F version=0.0.7 \
+  -F file=@dist/bundles/ota_order.0.0.7.ios.jsbundle
 
 curl -X POST http://127.0.0.1:3001/api/features/order/rollback \
   -H 'Content-Type: application/json' \
@@ -40,9 +68,6 @@ curl -X POST http://127.0.0.1:3001/api/features/order/rollback \
 
 # Delete a release (removes DB record + data/bundles file)
 curl -X DELETE http://127.0.0.1:3001/api/features/order/releases/<releaseId>
-
-# CI helper
-./scripts/upload-bundle.sh order 1.0.0 ../rn_app/dist/bundles/ota_order.1.0.0.ios.jsbundle
 ```
 
 > Remote entries: `order`, `promo`. Create more via Admin or `POST /api/features`.

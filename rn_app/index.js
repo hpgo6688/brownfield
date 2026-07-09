@@ -1,7 +1,3 @@
-/**
- * @format
- */
-
 import 'react-native-gesture-handler';
 
 import { AppRegistry } from 'react-native';
@@ -38,5 +34,10 @@ Object.entries(remoteFeatureMeta).forEach(([featureId, feature]) => {
 });
 
 AppRegistry.registerComponent('FeatureHost', () => FeatureHost);
+
+if (__DEV__) {
+  const { preloadOtaSplitHostModules } = require('./src/features/otaSplitHostPreload');
+  preloadOtaSplitHostModules();
+}
 
 installDevOtaModeBridge();

@@ -24,26 +24,33 @@ bundles/
 |------|------|
 | `ota_<featureId>/index.js` | split bundle 入口，注册 `ota_*` 模块名 |
 | `ota_<featureId>/screens/` | OTA 专用包装（badge：`OTA · 远程 Bundle`） |
-| 构建产物（RN 侧） | `rn_app/dist/bundles/ota_<id>.<version>.ios.jsbundle` |
+| 构建产物（RN 侧） | `bundle-server/dist/bundles/ota_<id>.<version>.ios.jsbundle` |
 | 服务端存储（upload 后） | `bundle-server/data/bundles/ota_<id>.<version>.ios.jsbundle` |
+
+## 发版流程
+
+```bash
+# 1. 更新 rn_app/package.json 版本号
+
+# 2. 构建
+cd rn_app
+npm run build:bundles:dev    # DEV；发版用 npm run build:bundles
+
+# 3. 上传（版本号与 package.json 一致）
+cd ../bundle-server
+npm run dev
+./scripts/upload-bundle.sh order 0.0.7 dist/bundles/ota_order.0.0.7.ios.jsbundle
+./scripts/upload-bundle.sh promo 0.0.7 dist/bundles/ota_promo.0.0.7.ios.jsbundle
+
+# 4. 校验
+curl -s http://127.0.0.1:3001/api/manifest | jq '.features[] | {id, version, hash}'
+```
 
 ## 日常 UI 开发改哪里？
 
 大多数 UI 改动应在 **`screens/remote/`** 或 **`screens/remote/components/`** 完成（Metro HMR）。
 
 仅当需要修改 OTA 专用标识、文案或 upload 独有逻辑时，才编辑本目录下的 OTA 包装页。
-
-## 发版流程
-
-```bash
-cd rn_app && npm run build:bundles
-
-cd ../bundle-server
-./scripts/upload-bundle.sh order 0.0.2 ../rn_app/dist/bundles/ota_order.0.0.2.ios.jsbundle
-./scripts/upload-bundle.sh promo 0.0.2 ../rn_app/dist/bundles/ota_promo.0.0.2.ios.jsbundle
-```
-
-验证：原生壳 DEBUG → **OTA** 模式 → 进入对应 Remote 页。
 
 ## 不要做什么
 

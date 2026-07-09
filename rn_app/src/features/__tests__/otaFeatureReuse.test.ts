@@ -5,7 +5,11 @@ import {
   readCachedMetadata,
 } from '../bundleCache';
 import { shouldBustOtaComponentCache } from '../registerFeature';
-import { probeOtaFastPath } from '../otaFeatureReuse';
+import {
+  wasMetroFeatureLoadedThisSession,
+  wasOtaFeatureLoadedThisSession,
+} from '../otaSessionLoad';
+import { probeOtaFastPath, tryInstantOtaReentry } from '../otaFeatureReuse';
 
 jest.mock('../bundleCache', () => ({
   readCachedMetadata: jest.fn(),
@@ -13,8 +17,20 @@ jest.mock('../bundleCache', () => ({
   isCachedBundleUsable: jest.fn(),
 }));
 
+jest.mock('../otaSessionLoad', () => ({
+  wasOtaFeatureLoadedThisSession: jest.fn(),
+  wasMetroFeatureLoadedThisSession: jest.fn(),
+}));
+
+const mockComponent = function MockOrderScreen() {
+  return null;
+};
+
 jest.mock('../registerFeature', () => ({
   shouldBustOtaComponentCache: jest.fn(),
+  getFeatureComponent: jest.fn(),
+  getFeatureSource: jest.fn(),
+  syncOtaRegistrationFromCache: jest.fn(),
 }));
 
 const mockReadCachedMetadata = readCachedMetadata as jest.MockedFunction<
@@ -29,6 +45,19 @@ const mockIsCachedBundleUsable = isCachedBundleUsable as jest.MockedFunction<
 const mockShouldBust = shouldBustOtaComponentCache as jest.MockedFunction<
   typeof shouldBustOtaComponentCache
 >;
+const mockWasOtaSession = wasOtaFeatureLoadedThisSession as jest.MockedFunction<
+  typeof wasOtaFeatureLoadedThisSession
+>;
+const mockWasMetroSession = wasMetroFeatureLoadedThisSession as jest.MockedFunction<
+  typeof wasMetroFeatureLoadedThisSession
+>;
+
+const { getFeatureComponent, getFeatureSource, syncOtaRegistrationFromCache } =
+  jest.requireMock('../registerFeature') as {
+    getFeatureComponent: jest.Mock;
+    getFeatureSource: jest.Mock;
+    syncOtaRegistrationFromCache: jest.Mock;
+  };
 
 const activeMeta: CachedFeatureMetadata = {
   featureId: 'order',
@@ -76,5 +105,51 @@ describe('probeOtaFastPath', () => {
     mockShouldBust.mockReturnValue(true);
 
     await expect(probeOtaFastPath('order')).resolves.toBeNull();
+  });
+});
+
+describe('tryInstantOtaReentry', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockWasOtaSession.mockReturnValue(true);
+    mockWasMetroSession.mockReturnValue(false);
+    getFeatureSource.mockReturnValue('ota');
+    getFeatureComponent.mockReturnValue(null);
+  });
+
+  it('returns live registry without disk probe', async () => {
+    getFeatureComponent.mockReturnValue(mockComponent);
+
+    const result = await tryInstantOtaReentry('order');
+
+    expect(result).toBe(mockComponent);
+    expect(mockReadCachedMetadata).not.toHaveBeenCalled();
+    expect(syncOtaRegistrationFromCache).not.toHaveBeenCalled();
+  });
+
+  it('returns null when session mark is missing', async () => {
+    mockWasOtaSession.mockReturnValue(false);
+
+    await expect(tryInstantOtaReentry('order')).resolves.toBeNull();
+  });
+
+  it('returns null after Metro was used in this session', async () => {
+    mockWasMetroSession.mockReturnValue(true);
+
+    await expect(tryInstantOtaReentry('order')).resolves.toBeNull();
+  });
+
+  it('returns null when live registry source is not ota', async () => {
+    getFeatureSource.mockReturnValue('main');
+    getFeatureComponent.mockReturnValue(mockComponent);
+
+    await expect(tryInstantOtaReentry('order')).resolves.toBeNull();
+  });
+
+  it('returns null when registry is empty (cache restore is bundleLoader job)', async () => {
+    getFeatureComponent.mockReturnValue(null);
+
+    await expect(tryInstantOtaReentry('order')).resolves.toBeNull();
+    expect(syncOtaRegistrationFromCache).not.toHaveBeenCalled();
   });
 });
