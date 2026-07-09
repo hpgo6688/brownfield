@@ -163,7 +163,7 @@ rn_app/ios/.brownfield/package/build/
 | 改 JS 页面不更新 | 用了 Release 包 | `npm run brownfield:package:ios:debug`，Xcode Clean + Run |
 | Metro 报 `No apps connected` | App 未连 Metro（内嵌 bundle） | 同上，确认 Debug 包 + Debug scheme |
 | `RCTStatusBarManager` 崩溃 | 缺 Info.plist 配置 | 确认 `ios_native/Info.plist` 含 `UIViewControllerBasedStatusBarAppearance = false` |
-| RN 页无返回 | Remote 误删 `RemoteNativeExitRow` | 根页应显示「← 菜单」；Scheme 1 仍用原生栏返回 |
+| RN 页无返回 | Remote 根页缺少 RN navigation header | 根页导航栏应显示「菜单」；Scheme 1 仍用原生栏返回 |
 
 ---
 

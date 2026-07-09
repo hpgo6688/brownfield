@@ -6,6 +6,8 @@ type RemoteHeroProps = {
   heroBackground: string;
   title: string;
   subtitle: string;
+  /** When false, title is omitted (shown in React Navigation header instead). Default true. */
+  showTitle?: boolean;
 };
 
 export function RemoteHero({
@@ -14,11 +16,12 @@ export function RemoteHero({
   heroBackground,
   title,
   subtitle,
+  showTitle = true,
 }: RemoteHeroProps) {
   return (
     <View style={[styles.hero, { backgroundColor: heroBackground }]}>
       <Text style={[styles.badge, { color: badgeColor }]}>{badge}</Text>
-      <Text style={styles.title}>{title}</Text>
+      {showTitle ? <Text style={styles.title}>{title}</Text> : null}
       <Text style={styles.subtitle}>{subtitle}</Text>
     </View>
   );

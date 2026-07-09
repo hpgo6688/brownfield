@@ -8,39 +8,48 @@
 |------|------|
 | `OrderScreen.tsx` / `PromoScreen.tsx` | Metro dev 页面包装（badge：`Remote · 远程业务`） |
 | `order/` | 订单多级 RN 导航（`OrderNavigator`、详情、物流追踪） |
-| `components/` | 共享业务 UI（OrderList、PromoList、RemoteHero、`RemoteNativeExitRow`） |
+| `navigation/` | 共享 native-stack header 样式、`RemoteRootHeaderBack` |
+| `components/` | 共享业务 UI（OrderList、PromoList、RemoteHero） |
 | `featureMeta.ts` | Remote featureId → moduleName 映射 |
-| `RemoteScreenShell.tsx` | 页面外壳布局（Remote 全屏 safe area） |
+| `RemoteScreenShell.tsx` | 页面外壳（bottom safe area；top 由 RN header 处理） |
 
-## Remote 全屏 chrome（无原生导航栏）
+## Remote 全屏 chrome（无原生 navigation bar）
 
-Remote 入口（`RemoteReactNativeScreenView`）**隐藏 SwiftUI 原生 navigation bar**，避免与 RN 内栈双导航叠加。
+Remote 入口（`RemoteReactNativeScreenView`）**隐藏 SwiftUI 原生 navigation bar**，避免双导航叠加。见已归档 change `remote-rn-hide-native-nav`。
 
-| 层级 | 返回方式 |
-|------|----------|
-| RN 根页（列表 / 活动） | **「← 菜单」** → `popToNative()` 回到 Native Shell |
-| RN 子页（详情 / 物流） | **「← 返回」** → React Navigation `goBack()` |
+### React Navigation native-stack header
 
-- JS API：`src/features/nativeShell.ts` → `NativeShellNavigation` 原生模块（BrownfieldLib）
-- Scheme 1 本地 RN（Home/Profile/Settings）**仍保留**原生 navigation bar
+Remote 功能内使用 **React Navigation 原生导航栏**（`headerShown: true`），统一配置见 `navigation/remoteStackScreenOptions.ts`：
+
+| 路由层级 | 导航栏行为 |
+|----------|------------|
+| 根页（OrderList / PromoRoot） | 标题 + 左侧「菜单」→ `popToNative()` |
+| 子页（OrderDetail / OrderTracking） | 系统返回按钮「返回」+ 侧滑手势 → `goBack()` |
+
+根页 `RemoteHero` 使用 `showTitle={false}`，标题由 navigation header 展示。
+
+- JS API：`src/features/nativeShell.ts` → `NativeShellNavigation.popToNative()`
+- Scheme 1 本地 RN（Home/Profile/Settings）**仍保留** SwiftUI navigation bar
+
+### 手势返回
+
+子路由启用 `gestureEnabled` + `fullScreenGestureEnabled`。根列表 `OrderList` / `PromoRoot` 禁用全屏手势，避免与 `ScrollView` 冲突。
+
+### 已知限制（v1）
+
+SwiftUI 边缘 interactive pop 在 RN 子页仍可能 **直接 dismiss 整个 Remote**；v1 依赖 RN navigation header + native-stack 侧滑。
 
 ## 订单多级页面（Metro dev）
 
-订单功能内使用 **React Navigation native-stack**（`screens/remote/order/`，见 change `order-react-navigation`）：
-
 | 路由 | 说明 |
 |------|------|
-| `OrderList` | 列表（初始页，含「← 菜单」） |
-| `OrderDetail` | 详情（点击列表项进入） |
-| `OrderTracking` | 物流追踪（第三级） |
-
-- 依赖原生模块：`react-native-screens`、`react-native-gesture-handler`、`NativeShellNavigation`
-- **新增/升级原生依赖后**须 `pod install` + `npm run brownfield:package:ios:debug:sim` 重建 BrownfieldLib
-- 子页使用 **「← 返回」** pop RN 栈；根页 **「← 菜单」** 退出 Remote 功能
+| `OrderList` | 列表（初始页，RN header + 「菜单」） |
+| `OrderDetail` | 详情 |
+| `OrderTracking` | 物流追踪 |
 
 ```bash
 cd rn_app && npm start
-# 菜单 → 订单（无原生栏）→ 列表 → 详情 → 物流 → RN 返回 ×2 → 「← 菜单」回 Shell
+# 菜单 → 订单 → 列表 → 详情 → 物流 → 导航栏返回/侧滑 ×2 → 「菜单」回 Shell
 ```
 
 ## 不要做什么

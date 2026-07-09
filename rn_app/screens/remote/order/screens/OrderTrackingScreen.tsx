@@ -1,16 +1,10 @@
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useRoute, type RouteProp } from '@react-navigation/native';
 import { StyleSheet, Text, View } from 'react-native';
-import { OrderBackRow } from '../components/OrderBackRow';
 import { OrderPageShell } from '../components/OrderPageShell';
 import { getOrderById } from '../fixtures';
 import type { OrderStackParamList } from '../types';
 
 type OrderTrackingRouteProp = RouteProp<OrderStackParamList, 'OrderTracking'>;
-type OrderTrackingNavigationProp = NativeStackNavigationProp<
-  OrderStackParamList,
-  'OrderTracking'
->;
 
 const TRACKING_STEPS = [
   { time: '07-08 14:20', event: '包裹已揽收' },
@@ -19,15 +13,12 @@ const TRACKING_STEPS = [
 ];
 
 export function OrderTrackingScreen() {
-  const navigation = useNavigation<OrderTrackingNavigationProp>();
   const route = useRoute<OrderTrackingRouteProp>();
   const { orderId } = route.params;
   const order = getOrderById(orderId);
 
   return (
     <OrderPageShell>
-      <OrderBackRow title="物流追踪" onBack={() => navigation.goBack()} />
-
       {order ? (
         <Text style={styles.subtitle}>
           {order.title} · #{order.id}
@@ -48,7 +39,9 @@ export function OrderTrackingScreen() {
         ))}
       </View>
 
-      <Text style={styles.hint}>子页请使用「← 返回」回到上一级；列表页点「← 菜单」退出订单功能。</Text>
+      <Text style={styles.hint}>
+        子页可使用导航栏「返回」或侧滑回到上一级；列表页导航栏「菜单」退出订单功能。
+      </Text>
     </OrderPageShell>
   );
 }

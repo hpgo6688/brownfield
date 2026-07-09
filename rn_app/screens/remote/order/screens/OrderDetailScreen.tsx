@@ -1,7 +1,7 @@
+import { useLayoutEffect } from 'react';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { OrderBackRow } from '../components/OrderBackRow';
 import { OrderPageShell } from '../components/OrderPageShell';
 import { getOrderById } from '../fixtures';
 import type { OrderStackParamList } from '../types';
@@ -18,10 +18,15 @@ export function OrderDetailScreen() {
   const { orderId } = route.params;
   const order = getOrderById(orderId);
 
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      title: order ? '订单详情' : '订单不存在',
+    });
+  }, [navigation, order]);
+
   if (!order) {
     return (
       <OrderPageShell>
-        <OrderBackRow title="订单不存在" onBack={() => navigation.goBack()} />
         <Text style={styles.missing}>未找到订单 #{orderId}</Text>
       </OrderPageShell>
     );
@@ -29,8 +34,6 @@ export function OrderDetailScreen() {
 
   return (
     <OrderPageShell>
-      <OrderBackRow title="订单详情" onBack={() => navigation.goBack()} />
-
       <View style={styles.card}>
         <Text style={styles.label}>商品</Text>
         <Text style={styles.value}>{order.title}</Text>
