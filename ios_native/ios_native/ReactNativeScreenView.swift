@@ -6,7 +6,7 @@
 import SwiftUI
 import BrownfieldLib
 
-/// Embeds RN without ignoring safe area, so content stays below the native navigation bar.
+/// Embeds RN; Remote entries use fullscreen chrome (no native navigation bar).
 private struct EmbeddedReactNativeView: UIViewControllerRepresentable {
     let moduleName: String
     let initialProperties: [String: Any]
@@ -29,6 +29,7 @@ private struct ReactNativeScreenContainer: View {
     let title: String
     let initialProperties: [String: Any]
     let passesDevOtaMode: Bool
+    let hidesNativeNavigationBar: Bool
 
     @State private var reloadToken = UUID()
 
@@ -38,10 +39,12 @@ private struct ReactNativeScreenContainer: View {
             initialProperties: currentInitialProperties
         )
         .id(reloadToken)
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.bar, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
+        .modifier(
+            NativeNavigationChromeModifier(
+                title: title,
+                hidesNativeNavigationBar: hidesNativeNavigationBar
+            )
+        )
         .onChange(of: devOtaMode.isOtaMode) { _, _ in
             reloadToken = UUID()
         }
@@ -61,6 +64,25 @@ private struct ReactNativeScreenContainer: View {
     }
 }
 
+private struct NativeNavigationChromeModifier: ViewModifier {
+    let title: String
+    let hidesNativeNavigationBar: Bool
+
+    func body(content: Content) -> some View {
+        if hidesNativeNavigationBar {
+            content
+                .navigationBarBackButtonHidden(true)
+                .toolbar(.hidden, for: .navigationBar)
+        } else {
+            content
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.bar, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+        }
+    }
+}
+
 /// 方案 1: direct moduleName from the main bundle.
 struct LocalReactNativeScreenView: View {
     let moduleName: String
@@ -71,7 +93,8 @@ struct LocalReactNativeScreenView: View {
             moduleName: moduleName,
             title: title,
             initialProperties: [:],
-            passesDevOtaMode: false
+            passesDevOtaMode: false,
+            hidesNativeNavigationBar: false
         )
     }
 }
@@ -90,7 +113,8 @@ struct RemoteReactNativeScreenView: View {
                 "featureId": featureId,
                 "manifestUrl": manifestURL.absoluteString,
             ],
-            passesDevOtaMode: true
+            passesDevOtaMode: true,
+            hidesNativeNavigationBar: true
         )
     }
 }

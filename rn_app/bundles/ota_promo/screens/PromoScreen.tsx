@@ -1,6 +1,6 @@
 // BUILD/UPLOAD ONLY — not used by Metro dev. Changes require build:bundles + upload.
 import { StyleSheet, View } from 'react-native';
-import { PromoList, RemoteHero } from '../../../screens/remote/components';
+import { PromoList, RemoteHero, RemoteNativeExitRow } from '../../../screens/remote/components';
 import { RemoteScreenShell } from '../../../screens/remote/RemoteScreenShell';
 import { OTA_RELEASE_VERSION } from '../../otaReleaseVersion';
 
@@ -8,6 +8,7 @@ export default function PromoScreen() {
   return (
     <RemoteScreenShell>
       <View style={styles.content}>
+        <RemoteNativeExitRow />
         <RemoteHero
           badge="OTA · 远程 Bundle"
           badgeColor="#059669"

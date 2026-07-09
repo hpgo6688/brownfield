@@ -42,7 +42,14 @@ ios_native/
 └── ios_native.xcodeproj
 ```
 
-RN 页面使用 **系统 NavigationStack 导航栏**（磨玻璃 + 标准返回），不是自定义顶栏。从菜单点「React Native」进入，左上角返回回到原生菜单。
+RN 页面导航约定：
+
+| 类型 | 原生 navigation bar | 退出到菜单 |
+|------|---------------------|------------|
+| **Scheme 1 本地 RN**（Home/Profile/Settings） | ✅ 显示（系统返回） | 原生栏返回 |
+| **Remote 远程业务**（order/promo） | ❌ 隐藏（全屏 RN） | 根页 **「← 菜单」**（`popToNative()`） |
+
+Remote 功能内多级页由 **React Navigation** 管理；详见 [screens/remote/README.md](rn_app/screens/remote/README.md)。
 
 `ios_nativeApp.swift` 初始化要点：
 
@@ -156,7 +163,7 @@ rn_app/ios/.brownfield/package/build/
 | 改 JS 页面不更新 | 用了 Release 包 | `npm run brownfield:package:ios:debug`，Xcode Clean + Run |
 | Metro 报 `No apps connected` | App 未连 Metro（内嵌 bundle） | 同上，确认 Debug 包 + Debug scheme |
 | `RCTStatusBarManager` 崩溃 | 缺 Info.plist 配置 | 确认 `ios_native/Info.plist` 含 `UIViewControllerBasedStatusBarAppearance = false` |
-| RN 页无返回 | 误用自定义顶栏或 `navigationBarHidden(true)` | 使用 `ReactNativeScreenView` 现有写法（系统 NavigationStack 导航栏） |
+| RN 页无返回 | Remote 误删 `RemoteNativeExitRow` | 根页应显示「← 菜单」；Scheme 1 仍用原生栏返回 |
 
 ---
 

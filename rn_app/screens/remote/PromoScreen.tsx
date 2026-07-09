@@ -13,7 +13,7 @@ import {
   getPendingUpdate,
 } from '../../src/features/bundleUpdater';
 import { getForceOtaInDev } from '../../src/features/remoteConfig';
-import { PromoList, RemoteHero } from './components';
+import { PromoList, RemoteHero, RemoteNativeExitRow } from './components';
 import { remoteFeatureIds } from './featureMeta';
 import { RemoteScreenShell } from './RemoteScreenShell';
 
@@ -82,6 +82,7 @@ export default function PromoScreen() {
   return (
     <RemoteScreenShell>
       <View style={styles.content}>
+        <RemoteNativeExitRow />
         <RemoteHero
           badge="Metro · 本地开发"
           badgeColor="#16A34A"

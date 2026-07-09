@@ -121,6 +121,10 @@ npm run brownfield:package:ios:debug:sim       # 模拟器 Debug 包
 
 未重建 BrownfieldLib 时典型报错：`unimplemented component: <RNSScreenStack>`、`RNGestureHandlerModule not found`。
 
+### Remote 退出原生（NativeShellNavigation）
+
+Remote 根页「← 菜单」调用 `NativeShellNavigation.popToNative()`（BrownfieldLib）。新增该模块后同样需重建 BrownfieldLib + Xcode Clean Build。
+
 ---
 
 ## 4. SOP-B：Remote 业务日常开发（Metro 模式）

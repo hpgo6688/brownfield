@@ -1,7 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ScrollView, StyleSheet } from 'react-native';
-import { OrderList, RemoteHero } from '../../components';
+import { OrderList, RemoteHero, RemoteNativeExitRow } from '../../components';
 import { useOrderFeatureConfig } from '../OrderFeatureContext';
 import type { OrderStackParamList } from '../types';
 
@@ -19,6 +19,7 @@ export function OrderListScreen() {
       style={styles.page}
       contentContainerStyle={styles.pageContent}
       keyboardShouldPersistTaps="handled">
+      <RemoteNativeExitRow />
       <RemoteHero {...hero} />
       <OrderList
         statusColor={statusColor}

@@ -12,7 +12,7 @@ export function RemoteScreenShell({ children }: RemoteScreenShellProps) {
   return (
     <SafeAreaProvider>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <SafeAreaView style={styles.container} edges={['bottom']}>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <View style={styles.content}>{children}</View>
       </SafeAreaView>
     </SafeAreaProvider>

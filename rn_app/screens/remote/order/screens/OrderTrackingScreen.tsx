@@ -48,7 +48,7 @@ export function OrderTrackingScreen() {
         ))}
       </View>
 
-      <Text style={styles.hint}>子页请使用「← 返回」；原生导航栏返回将退出整个订单功能。</Text>
+      <Text style={styles.hint}>子页请使用「← 返回」回到上一级；列表页点「← 菜单」退出订单功能。</Text>
     </OrderPageShell>
   );
 }

@@ -34,3 +34,4 @@
 - [x] 5.1 Update `screens/remote/README.md` — order uses React Navigation native-stack; Brownfield rebuild required
 - [x] 5.2 Update `docs/sop.md` or brownfield doc with navigation native dependency + rebuild steps
 - [x] 5.3 Note in `order-rn-multi-level-pages` or archive comment that implementation migrated to `order-react-navigation`
+- [x] 5.4 Related: `remote-rn-hide-native-nav` hides Remote native bar; use `RemoteNativeExitRow` + `popToNative()` on root
