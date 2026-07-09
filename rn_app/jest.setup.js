@@ -7,6 +7,10 @@ jest.mock('react-native', () => ({
   DevSettings: {
     reload: jest.fn(),
   },
+  AppState: {
+    currentState: 'active',
+    addEventListener: jest.fn(() => ({ remove: jest.fn() })),
+  },
 }));
 
 jest.mock('react-native-fs', () => ({

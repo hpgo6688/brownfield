@@ -143,6 +143,78 @@ export async function cachedBundleFileExists(localPath: string): Promise<boolean
 
 const MIN_USABLE_BUNDLE_BYTES = 1500;
 
+type UsabilityCacheEntry = {
+  size: number;
+};
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __OTA_BUNDLE_USABILITY_CACHE__: Map<string, UsabilityCacheEntry> | undefined;
+}
+
+function usabilityCache(): Map<string, UsabilityCacheEntry> {
+  if (!global.__OTA_BUNDLE_USABILITY_CACHE__) {
+    global.__OTA_BUNDLE_USABILITY_CACHE__ = new Map();
+  }
+  return global.__OTA_BUNDLE_USABILITY_CACHE__;
+}
+
+export function markBundleUsable(localPath: string, size: number): void {
+  usabilityCache().set(normalizeLocalPath(localPath), { size });
+}
+
+export function clearBundleUsabilityForPath(localPath: string): void {
+  usabilityCache().delete(normalizeLocalPath(localPath));
+}
+
+export function clearBundleUsabilityForFeature(featureId: string): void {
+  const prefix = `${featureDir(featureId)}/`;
+  for (const key of usabilityCache().keys()) {
+    if (key.startsWith(prefix)) {
+      usabilityCache().delete(key);
+    }
+  }
+}
+
+/** @deprecated Use clearBundleUsabilityForPath / clearBundleUsabilityForFeature */
+export function clearBundleUsabilityCache(localPath?: string) {
+  if (localPath) {
+    clearBundleUsabilityForPath(localPath);
+    return;
+  }
+
+  global.__OTA_BUNDLE_USABILITY_CACHE__ = new Map();
+}
+
+type RNFSStatModule = RNFSModule & {
+  stat: (path: string) => Promise<{ size: number }>;
+};
+
+async function trySessionUsabilityHit(path: string): Promise<boolean> {
+  const entry = usabilityCache().get(path);
+  if (!entry) {
+    return false;
+  }
+
+  const RNFS = getRNFS();
+  if (!RNFS) {
+    return false;
+  }
+
+  if (!(await RNFS.exists(path))) {
+    usabilityCache().delete(path);
+    return false;
+  }
+
+  const stat = await (RNFS as RNFSStatModule).stat(path);
+  if (stat.size !== entry.size) {
+    usabilityCache().delete(path);
+    return false;
+  }
+
+  return true;
+}
+
 /** Sync validation of downloaded / cached OTA split bundle text. */
 export function validateOtaBundleContent(featureId: string, code: string): boolean {
   if (code.length < MIN_USABLE_BUNDLE_BYTES) {
@@ -184,25 +256,62 @@ export async function isCachedBundleUsable(
     return false;
   }
 
-  type RNFSStatModule = RNFSModule & {
-    stat: (path: string) => Promise<{ size: number }>;
-  };
   const stat = await (RNFS as RNFSStatModule).stat(path);
   if (stat.size < MIN_USABLE_BUNDLE_BYTES) {
     return false;
   }
 
+  if (await trySessionUsabilityHit(path)) {
+    return true;
+  }
+
   const code = await RNFS.readFile(path, 'utf8');
   if (!featureId) {
-    return (
+    const usable =
       code.includes('registerFeature') &&
       code.includes('AppRegistry.registerComponent') &&
       code.includes('ota_') &&
-      /__r\(\d+\);/.test(code)
-    );
+      /__r\(\d+\);/.test(code);
+    if (usable) {
+      markBundleUsable(path, stat.size);
+    }
+    return usable;
   }
 
-  return validateOtaBundleContent(featureId, code);
+  const usable = validateOtaBundleContent(featureId, code);
+  if (usable) {
+    markBundleUsable(path, stat.size);
+  }
+  return usable;
+}
+
+/**
+ * Lightweight active-cache probe for same-session OTA re-entry (no readFile).
+ */
+export async function probeActiveCacheLight(
+  featureId: string,
+): Promise<CachedFeatureMetadata | null> {
+  const cached = await readCachedMetadata(featureId);
+  if (!cached) {
+    return null;
+  }
+
+  const RNFS = getRNFS();
+  if (!RNFS) {
+    return null;
+  }
+
+  const path = normalizeLocalPath(cached.localPath);
+  if (!(await RNFS.exists(path))) {
+    return null;
+  }
+
+  const stat = await (RNFS as RNFSStatModule).stat(path);
+  if (stat.size < MIN_USABLE_BUNDLE_BYTES) {
+    return null;
+  }
+
+  return cached;
 }
 
 export async function readCachedMetadata(
@@ -303,6 +412,7 @@ export async function deletePendingBundleByPath(localPath: string) {
   }
 
   const path = normalizeLocalPath(localPath);
+  clearBundleUsabilityForPath(path);
   if (path && (await RNFS.exists(path))) {
     await RNFS.unlink(path);
   }
@@ -315,6 +425,7 @@ export async function clearActiveMetadata(featureId: string) {
   }
 
   const path = metadataPath(featureId);
+  clearBundleUsabilityForFeature(featureId);
   if (await RNFS.exists(path)) {
     await RNFS.unlink(path);
   }
@@ -372,9 +483,14 @@ export async function clearUnusableActiveMetadata(featureId: string): Promise<bo
 }
 
 /** Self-heal active metadata when bundle files are missing or paths drift. */
-export async function reconcileActiveBundleCache(featureId: string): Promise<boolean> {
+export async function reconcileActiveBundleCache(
+  featureId: string,
+  options?: { light?: boolean },
+): Promise<boolean> {
   let changed = await clearStaleActiveMetadata(featureId);
-  changed = (await clearUnusableActiveMetadata(featureId)) || changed;
+  if (!options?.light) {
+    changed = (await clearUnusableActiveMetadata(featureId)) || changed;
+  }
 
   const active = await readCachedMetadata(featureId);
   if (!active) {
@@ -411,6 +527,7 @@ export async function writePendingBundle(
 
   await ensureFeatureDir(featureId);
   const path = pendingBundlePath(featureId, version);
+  clearBundleUsabilityForPath(path);
   await RNFS.writeFile(path, contents, 'utf8');
   return path;
 }
@@ -427,6 +544,7 @@ export async function writeCachedBundle(
 
   await ensureFeatureDir(featureId);
   const path = bundlePath(featureId, version);
+  clearBundleUsabilityForPath(path);
   await RNFS.writeFile(path, contents, 'utf8');
   return path;
 }
@@ -438,6 +556,7 @@ export async function deleteCachedBundle(featureId: string, version: string) {
   }
 
   const path = bundlePath(featureId, version);
+  clearBundleUsabilityForPath(path);
   if (await RNFS.exists(path)) {
     await RNFS.unlink(path);
   }

@@ -29,6 +29,8 @@ type UseOtaUpdatePollerOptions = {
   manifestUrl?: string;
   enabled: boolean;
   pollNowToken?: number;
+  /** Delay first poll cycle (e.g. after instant OTA re-entry). Interval polling unchanged. */
+  deferInitialPollMs?: number;
 };
 
 export function useOtaUpdatePoller({
@@ -36,6 +38,7 @@ export function useOtaUpdatePoller({
   manifestUrl,
   enabled,
   pollNowToken = 0,
+  deferInitialPollMs = 0,
 }: UseOtaUpdatePollerOptions) {
   const [pendingUpdate, setPendingUpdate] = useState<PendingFeatureMetadata | null>(null);
   const [activeVersion, setActiveVersion] = useState<string | null>(null);
@@ -168,7 +171,15 @@ export function useOtaUpdatePoller({
     }
 
     refreshPending().catch(() => {});
-    runPollCycle().catch(() => {});
+
+    let deferTimer: ReturnType<typeof setTimeout> | undefined;
+    if (deferInitialPollMs > 0) {
+      deferTimer = setTimeout(() => {
+        runPollCycle().catch(() => {});
+      }, deferInitialPollMs);
+    } else {
+      runPollCycle().catch(() => {});
+    }
 
     const intervalId = setInterval(() => {
       runPollCycle().catch(() => {});
@@ -182,10 +193,13 @@ export function useOtaUpdatePoller({
     });
 
     return () => {
+      if (deferTimer) {
+        clearTimeout(deferTimer);
+      }
       clearInterval(intervalId);
       subscription.remove();
     };
-  }, [enabled, featureId, refreshPending, runPollCycle]);
+  }, [deferInitialPollMs, enabled, featureId, refreshPending, runPollCycle]);
 
   useEffect(() => {
     if (!enabled) {

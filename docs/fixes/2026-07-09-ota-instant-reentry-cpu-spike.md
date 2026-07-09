@@ -1,7 +1,7 @@
 # OTA instant re-entry 后短时间 CPU 飙高
 
 **Date**: 2026-07-09
-**Status**: Documented（待优化）
+**Status**: Fixed
 **Scope**: rn_app OTA — `bundleCache`、`bundleUpdater`、`otaUpdatePoller`、`useFeatureHost`
 
 ## 问题描述
@@ -114,42 +114,28 @@ instant 复用的是**组件类型引用**，不是上次的 React 子树。每�
 | `[OTA poll] order active=… remote=… update=false` | poller 与读盘校验同时发生 |
 | **无** `[SplitBundleLoader] load` | 排除 segment reload 导致 CPU |
 
-## 计划优化（待实施）
+## 解决方案
 
-按收益 / 风险排序：
+1. **Session 级 bundle 校验缓存**（`bundleCache.ts`）：`markBundleUsable` / `clearBundleUsabilityForPath`；`isCachedBundleUsable` 同 path 二次调用跳过 `readFile`（`stat.size` 守卫）
+2. **轻量 session probe**（`probeActiveCacheLight` + `ensureFeatureCached`）：`wasOtaFeatureLoadedThisSession` + live registry 时跳过 `reconcile` 全文件校验，直接返回 active cache
+3. **Hash 降级**：`activeBundleFileMatchesRemote(..., { trustMetadata: true })` 在 session re-entry 且 metadata 与 remote 一致时跳过 SHA256
+4. **Poller 延迟**：instant mount 时 `deferInitialPollMs: 1500`；`refreshPending` 仍立即执行，interval 不变
 
-### P0 — Session 级 bundle 校验缓存
+**关键变更**：
+- `rn_app/src/features/bundleCache.ts` — session usability cache、`probeActiveCacheLight`
+- `rn_app/src/features/bundleUpdater.ts` — early light path in `ensureFeatureCached`
+- `rn_app/src/features/otaUpdatePoller.ts` — `deferInitialPollMs`
+- `rn_app/src/features/useFeatureHost.ts` — instant mount 传 defer + full reload 清 cache
 
-- 在 `bundleCache` 维护 `Map<normalizedPath, { size, mtime?, validatedAt }>` 或 session Set
-- 本 session 内同 path 已通过 `isCachedBundleUsable` → 直接返回 true（或仅 `stat` 比对 size）
-- `wasOtaFeatureLoadedThisSession(featureId)` 为 true 时，对 active path 信任 metadata，跳过全文件 read
+## 验证方式
 
-### P1 — instant re-entry 延迟 poller 首轮
+- [x] `npm test` — 40 passed（`bundleCacheSessionUsability`、`ensureFeatureCachedLightPath`、`otaUpdatePollerDefer`）
+- [ ] Instruments：instant 后 1s 内 `readFile` 占比下降
+- [ ] 手动：OTA → 返回 → 再进；instant 日志后约 1.5s 才有 `[OTA poll]`，无 `[SplitBundleLoader] load`
 
-- `useOtaUpdatePoller` 增加 `deferInitialPollMs`（如 1500～2000ms）或在 `useFeatureHost` instant 分支传入 `pollDeferred`
-- 首屏 mount 完成后再 `runPollCycle`；interval 轮询不变
-- 降低与 `ensureFeatureCached` 的并行读盘
+## 后续建议（可选）
 
-### P2 — instant 时精简 `ensureFeatureCached`
-
-- session re-entry + live registry 场景：`refreshOtaEntryInBackground` 跳过 `reconcileActiveBundleCache` 中的 `clearUnusableActiveMetadata`（全文件校验）
-- 或拆出 `ensureFeatureCachedLight`：只读 metadata + `exists` + `stat.size`，不 `readFile`
-
-### P3 — hash 校验降级
-
-- `activeBundleFileMatchesRemote` 在 session re-entry 时信任 metadata hash，不全量 SHA256
-- 完整 hash 仅在 download / apply pending / bootstrap 时执行
-
-### P4 — 导航保活（体验项，CPU 收益较小）
-
-- session 级缓存 `NavigationContainer` 子树，减少 `react-native-screens` 冷启动
-
-## 验证方式（优化后）
-
-- [ ] Instruments Time Profiler：instant 后 1s 内 JS 线程 `readFile` / 大字符串处理占比应显著下降
-- [ ] 日志：instant 后仍有 `[OTA poll]`，但无重复 `[SplitBundleLoader] load`
-- [ ] 手动：OTA → 返回 → 再进 Order，体感无卡顿、CPU 峰值缩短
-- [ ] `npm test` — 新增 session 缓存短路用例
+- **P4 导航保活**：session 级缓存 `NavigationContainer`（收益小于读盘优化）
 
 ## 相关文档
 

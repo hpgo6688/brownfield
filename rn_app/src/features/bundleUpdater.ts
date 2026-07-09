@@ -11,10 +11,12 @@ import {
   isBundleCacheAvailable,
   isCachedBundleUsable,
   normalizeLocalPath,
+  probeActiveCacheLight,
   pruneOldVersions,
   readCachedMetadata,
   readPendingMetadata,
   markPendingDeferredApply,
+  markBundleUsable,
   reconcileActiveBundleCache,
   validateOtaBundleContent,
   writeCachedBundle,
@@ -35,6 +37,7 @@ import {
   type RemoteFeature,
 } from './manifest';
 import { wasOtaFeatureLoadedThisSession } from './otaSessionLoad';
+import { peekInstantOtaReentry } from './otaFeatureReuse';
 import { clearOtaComponentCache } from './registerFeature';
 import { fetchWithRetry } from './retryWithBackoff';
 
@@ -225,9 +228,14 @@ export async function hashBundleFileAtPath(localPath: string): Promise<string | 
 export async function activeBundleFileMatchesRemote(
   cached: CachedFeatureMetadata,
   remote: Pick<RemoteFeature, 'hash'>,
+  options?: { trustMetadata?: boolean },
 ): Promise<boolean> {
   if (remote.hash === 'sha256:unset') {
     return false;
+  }
+
+  if (options?.trustMetadata && matchesRemoteRelease(cached, remote)) {
+    return true;
   }
 
   const digest = await hashBundleFileAtPath(cached.localPath);
@@ -263,6 +271,7 @@ async function verifyAndPersistActive(
   verifyOtaBundleBody(feature.id, body, feature.hash);
 
   const localPath = await writeCachedBundle(feature.id, feature.version, body);
+  markBundleUsable(localPath, body.length);
   const metadata: CachedFeatureMetadata = {
     featureId: feature.id,
     version: feature.version,
@@ -284,6 +293,7 @@ async function verifyAndPersistPending(
   verifyOtaBundleBody(feature.id, body, feature.hash);
 
   const localPath = await writePendingBundle(feature.id, feature.version, body);
+  markBundleUsable(localPath, body.length);
   const metadata: PendingFeatureMetadata = {
     featureId: feature.id,
     version: feature.version,
@@ -557,6 +567,30 @@ export async function ensureFeatureCached(
     }
   }
 
+  const sessionReentry = wasOtaFeatureLoadedThisSession(featureId);
+  const liveRegistry = peekInstantOtaReentry(featureId) !== null;
+
+  if (sessionReentry && liveRegistry) {
+    const light = await probeActiveCacheLight(featureId);
+    if (light) {
+      const deferredApplied = await applyDeferredPendingIfNeeded(featureId);
+      if (deferredApplied === null) {
+        return {
+          featureId,
+          feature: enrichRemoteFeature(
+            fallbackFeature(featureId, {
+              version: light.version,
+              hash: light.hash,
+            }),
+          ),
+          updated: false,
+          bundlePath: light.localPath,
+          cachedVersion: light.version,
+        };
+      }
+    }
+  }
+
   await reconcileActiveBundleCache(featureId);
 
   const deferredApplied = await applyDeferredPendingIfNeeded(featureId);
@@ -567,10 +601,7 @@ export async function ensureFeatureCached(
     (await cachedBundleFileExists(cached.localPath)) &&
     (await isCachedBundleUsable(cached.localPath, featureId));
 
-  const sessionReentry =
-    wasOtaFeatureLoadedThisSession(featureId) && deferredApplied === null;
-
-  if (cachedFileReady && cached && sessionReentry) {
+  if (cachedFileReady && cached && sessionReentry && deferredApplied === null) {
     return {
       featureId,
       feature: enrichRemoteFeature(
@@ -594,7 +625,11 @@ export async function ensureFeatureCached(
         forceRefresh: true,
       });
 
-      const activeFileOk = await activeBundleFileMatchesRemote(cached, feature);
+      const trustMetadata =
+        sessionReentry && matchesRemoteRelease(cached, feature);
+      const activeFileOk = await activeBundleFileMatchesRemote(cached, feature, {
+        trustMetadata,
+      });
       const metaOk = matchesRemoteRelease(cached, feature);
 
       if (!activeFileOk || !metaOk) {

@@ -7,7 +7,7 @@ import {
   formatRemoteBundleError,
   type UpdateCheckResult,
 } from './bundleUpdater';
-import { getCachedFeatureVersion, isBundleCacheAvailable } from './bundleCache';
+import { getCachedFeatureVersion, isBundleCacheAvailable, clearBundleUsabilityForFeature } from './bundleCache';
 import { clearLoadedBundlesForFeature, loadFeatureBundle } from './bundleLoader';
 import { getPersistedDevOtaMode } from './devOtaModeStore';
 import {
@@ -206,10 +206,14 @@ export function useFeatureHost({
     () => initialOtaScreen(featureId, devOtaMode) !== null,
   );
 
+  const instantReentryOnMount =
+    initialOtaScreen(featureId, devOtaMode) !== null;
+
   const poll = useOtaUpdatePoller({
     featureId: featureId ?? '',
     manifestUrl,
     enabled: otaModeActive && Boolean(featureId) && screenReady,
+    deferInitialPollMs: instantReentryOnMount ? 1500 : 0,
   });
 
   useEffect(() => {
@@ -287,6 +291,7 @@ export function useFeatureHost({
         setScreenReady(false);
         clearFeatureRegistration(featureId);
         clearLoadedBundlesForFeature(featureId);
+        clearBundleUsabilityForFeature(featureId);
 
         const loaded = await loadOtaFeatureScreen(featureId, manifestUrl);
         updateResult = loaded.updateResult;
