@@ -1,10 +1,20 @@
 import { useEffect, useState } from 'react';
 import { DevSettings } from 'react-native';
 import type { ComponentType } from 'react';
-import { ensureFeatureCached, formatRemoteBundleError, type UpdateCheckResult } from './bundleUpdater';
+import {
+  ensureFeatureCached,
+  formatFeatureLoadError,
+  formatRemoteBundleError,
+  type UpdateCheckResult,
+} from './bundleUpdater';
 import { getCachedFeatureVersion, isBundleCacheAvailable } from './bundleCache';
 import { clearLoadedBundlesForFeature, loadFeatureBundle } from './bundleLoader';
 import { getPersistedDevOtaMode } from './devOtaModeStore';
+import {
+  clearOtaFeatureSessionMark,
+  markOtaFeatureLoadedThisSession,
+} from './otaSessionLoad';
+import { clearOtaComponentCache } from './registerFeature';
 import { useOtaUpdatePoller } from './otaUpdatePoller';
 import { fetchFeatureById } from './manifest';
 import {
@@ -17,7 +27,6 @@ import {
   clearFeatureRegistration,
   getFeatureComponent,
   getFeatureSource,
-  syncOtaRegistrationFromCache,
   waitForFeatureComponent,
 } from './registerFeature';
 
@@ -78,6 +87,59 @@ async function resolveUseOtaMode(devOtaMode?: boolean): Promise<boolean> {
   return getPersistedDevOtaMode();
 }
 
+async function loadOtaFeatureScreen(
+  featureId: string,
+  manifestUrl: string | undefined,
+): Promise<{
+  component: ComponentType;
+  updateResult: UpdateCheckResult;
+}> {
+  const updateResult = await ensureFeatureCached(featureId, {
+    manifestUrl,
+  });
+
+  if (updateResult.runtimeReloadRequired) {
+    bumpOtaBundleRevision();
+    if (__DEV__ && getForceOtaInDev()) {
+      DevSettings.reload();
+    }
+    throw new Error('OTA runtime reload required');
+  }
+
+  if (!updateResult.bundlePath) {
+    const versions = versionContextFromUpdateResult(updateResult);
+    throw Object.assign(
+      new Error(updateResult.error ?? formatRemoteBundleError(featureId)),
+      { versions },
+    );
+  }
+
+  await loadFeatureBundle(updateResult.feature, {
+    localPath: updateResult.bundlePath,
+    otaMode: true,
+    ensureSegment: true,
+  });
+
+  let component = getFeatureComponent(featureId, { otaOnly: true });
+
+  if (!component) {
+    component = await waitForFeatureComponent(featureId, {
+      otaOnly: true,
+      timeoutMs: 500,
+      intervalMs: 8,
+    });
+  }
+
+  if (!component) {
+    const source = getFeatureSource(featureId);
+    throw new Error(
+      `OTA 模式：feature "${featureId}" bundle 已加载但未注册 ota_* 组件（source=${source ?? 'none'}，version=${updateResult.cachedVersion ?? '?'}）。请重新 upload ota_${featureId} bundle。`,
+    );
+  }
+
+  return { component, updateResult };
+}
+
 export type UseFeatureHostOptions = {
   featureId?: string;
   manifestUrl?: string;
@@ -115,11 +177,6 @@ export function useFeatureHost({
       }
 
       setError(null);
-      setScreen(null);
-      setScreenReady(false);
-
-      clearFeatureRegistration(featureId);
-      clearLoadedBundlesForFeature(featureId);
 
       const useOta = await resolveUseOtaMode(devOtaMode);
       setOtaModeActive(useOta);
@@ -128,10 +185,16 @@ export function useFeatureHost({
         setForceOtaInDev(useOta);
       }
 
-      let updateResult: UpdateCheckResult | null = null;
-
       if (!useOta) {
+        setScreen(null);
+        setScreenReady(false);
+
         try {
+          clearOtaFeatureSessionMark(featureId);
+          clearOtaComponentCache(featureId);
+          clearLoadedBundlesForFeature(featureId);
+          clearFeatureRegistration(featureId);
+
           const { loadMetroDevFeature } = await import('./metroDevFeatures');
           const component = await loadMetroDevFeature(featureId);
           if (!cancelled) {
@@ -150,6 +213,8 @@ export function useFeatureHost({
         return;
       }
 
+      let updateResult: UpdateCheckResult | null = null;
+
       try {
         if (!isBundleCacheAvailable()) {
           throw new Error(
@@ -157,80 +222,39 @@ export function useFeatureHost({
           );
         }
 
-        updateResult = await ensureFeatureCached(featureId, {
-          manifestUrl,
-        });
+        setScreen(null);
+        setScreenReady(false);
+        clearFeatureRegistration(featureId);
+        clearLoadedBundlesForFeature(featureId);
 
-        if (updateResult.runtimeReloadRequired) {
-          bumpOtaBundleRevision();
-          if (__DEV__ && getForceOtaInDev()) {
-            DevSettings.reload();
-          }
-          return;
-        }
-
-        if (!updateResult.bundlePath) {
-          if (!cancelled) {
-            const versions = versionContextFromUpdateResult(updateResult);
-            setError({
-              message:
-                updateResult.error ?? formatRemoteBundleError(featureId),
-              ...versions,
-            });
-            setScreen(null);
-            setScreenReady(false);
-          }
-          return;
-        }
-
-        syncOtaRegistrationFromCache(featureId, {
-          expectedVersion: updateResult.cachedVersion,
-          expectedLocalPath: updateResult.bundlePath,
-        });
-
-        let component = getFeatureComponent(featureId, { otaOnly: true });
-        if (component) {
-          if (!cancelled) {
-            setScreen(() => component);
-            setScreenReady(true);
-          }
-          return;
-        }
-
-        await loadFeatureBundle(updateResult.feature, {
-          localPath: updateResult.bundlePath,
-          force: true,
-          otaMode: true,
-        });
-
-        component = await waitForFeatureComponent(featureId, {
-          otaOnly: true,
-          timeoutMs: 3000,
-        });
-
-        if (!component) {
-          component = getFeatureComponent(featureId, { otaOnly: true });
-        }
-
-        if (!component) {
-          const source = getFeatureSource(featureId);
-          throw new Error(
-            `OTA 模式：feature "${featureId}" bundle 已加载但未注册 ota_* 组件（source=${source ?? 'none'}，version=${updateResult.cachedVersion ?? '?'}）。请重新 upload ota_${featureId} bundle。`,
-          );
-        }
+        const loaded = await loadOtaFeatureScreen(featureId, manifestUrl);
+        updateResult = loaded.updateResult;
 
         if (!cancelled) {
-          setScreen(() => component);
+          markOtaFeatureLoadedThisSession(featureId);
+          setScreen(() => loaded.component);
           setScreenReady(true);
         }
       } catch (loadError) {
+        if (loadError instanceof Error && loadError.message === 'OTA runtime reload required') {
+          return;
+        }
+
         if (!cancelled) {
           const raw =
             loadError instanceof Error ? loadError.message : 'Unknown load error';
-          const hints = versionContextFromUpdateResult(updateResult);
+          const hints =
+            loadError instanceof Error &&
+            'versions' in loadError &&
+            typeof loadError.versions === 'object'
+              ? (loadError.versions as Pick<
+                  FeatureLoadError,
+                  'remoteVersion' | 'localVersion'
+                >)
+              : versionContextFromUpdateResult(updateResult);
           const versions = await resolveOtaVersionContext(featureId, manifestUrl, hints);
           setError({
-            message: formatRemoteBundleError(featureId, raw),
+            message: formatFeatureLoadError(featureId, raw, versions),
             ...versions,
           });
           setScreen(null);

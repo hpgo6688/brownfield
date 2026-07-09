@@ -5,17 +5,19 @@ import {
   normalizeLocalPath,
   readCachedMetadata,
 } from './bundleCache';
-import { formatRemoteBundleError } from './bundleUpdater';
 import { getForceOtaInDev } from './remoteConfig';
 import {
+  clearFeatureRegistration,
   clearOtaComponentCache,
   isFeatureLoaded,
   isFeatureLoadedFromOta,
   shouldBustOtaComponentCache,
   stampOtaComponentCacheVersion,
   syncOtaRegistrationFromCache,
+  waitForFeatureComponent,
 } from './registerFeature';
 import { getFeatureSegmentId } from './segmentRegistry';
+import { wasOtaFeatureLoadedThisSession } from './otaSessionLoad';
 import { executeSplitBundleEntry } from './splitBundleEntry';
 import { isSplitBundleLoaderAvailable, SplitBundleLoader } from './splitBundleLoader';
 
@@ -52,6 +54,7 @@ function isLocalFileUrl(bundleUrl: string): boolean {
 async function loadFromNativeSplitBundle(
   feature: RemoteFeature,
   localPath: string,
+  options?: { ensureSegment?: boolean },
 ): Promise<void> {
   if (!isSplitBundleLoaderAvailable()) {
     throw new Error(
@@ -61,11 +64,11 @@ async function loadFromNativeSplitBundle(
 
   const path = normalizeLocalPath(localPath);
   if (!(await cachedBundleFileExists(path))) {
-    throw new Error(formatRemoteBundleError(feature.id, 'Cached bundle file not found'));
+    throw new Error('Cached bundle file not found');
   }
 
   if (!(await isCachedBundleUsable(path, feature.id))) {
-    throw new Error(formatRemoteBundleError(feature.id, 'not a valid OTA split bundle'));
+    throw new Error('not a valid OTA split bundle');
   }
 
   const activeMeta = await readCachedMetadata(feature.id);
@@ -86,21 +89,16 @@ async function loadFromNativeSplitBundle(
     });
   };
 
-  if (!isFeatureLoadedFromOta(feature.id)) {
-    trySyncFromCache();
-  }
+  const otaReentry =
+    options?.ensureSegment === true && wasOtaFeatureLoadedThisSession(feature.id);
 
-  if (isFeatureLoadedFromOta(feature.id)) {
-    loadedBundlePaths.set(feature.id, path);
-    if (activeMeta) {
-      stampOtaComponentCacheVersion(
-        feature.id,
-        activeMeta.version,
-        activeMeta.hash,
-        activeMeta.localPath,
-      );
+  if (options?.ensureSegment) {
+    clearFeatureRegistration(feature.id);
+    if (!otaReentry) {
+      clearOtaComponentCache(feature.id);
     }
-    return;
+  } else if (!isFeatureLoadedFromOta(feature.id)) {
+    trySyncFromCache();
   }
 
   if (
@@ -111,34 +109,52 @@ async function loadFromNativeSplitBundle(
   }
 
   const segmentId = feature.segmentId ?? getFeatureSegmentId(feature.id);
+
   if (__DEV__) {
     console.log(
-      `[SplitBundleLoader] load feature=${feature.id} segmentId=${segmentId} path=${path} pathChanged=${pathChanged} needsRegistration=${needsRegistration}`,
+      `[SplitBundleLoader] load feature=${feature.id} segmentId=${segmentId} path=${path} pathChanged=${pathChanged} needsRegistration=${needsRegistration} ensureSegment=${Boolean(options?.ensureSegment)} otaReentry=${otaReentry}`,
     );
   }
 
   await SplitBundleLoader!.load(path, segmentId);
 
-  const syncFromCache = () => {
+  // Re-entry: native segment re-eval does not re-run registerFeature; restore JS
+  // registry from cache immediately after load (must not skip native load).
+  if (otaReentry) {
     trySyncFromCache();
-  };
-
-  if (!isFeatureLoadedFromOta(feature.id)) {
-    syncFromCache();
   }
 
-  if (!isFeatureLoadedFromOta(feature.id)) {
-    await executeSplitBundleEntry(path, {
-      featureId: feature.id,
+  if (!isFeatureLoadedFromOta(feature.id) && !otaReentry) {
+    await waitForFeatureComponent(feature.id, {
+      otaOnly: true,
+      timeoutMs: 1000,
+      intervalMs: 8,
     });
   }
 
   if (!isFeatureLoadedFromOta(feature.id)) {
-    syncFromCache();
+    const requireRegistration = options?.ensureSegment === true && !otaReentry;
+    const entryOk = await executeSplitBundleEntry(path, {
+      featureId: feature.id,
+      requireRegistration,
+    });
+    if (!entryOk && options?.ensureSegment && !otaReentry) {
+      throw new Error(`split bundle entry failed for "${feature.id}"`);
+    }
+  }
+
+  if (!isFeatureLoadedFromOta(feature.id) && !options?.ensureSegment) {
+    trySyncFromCache();
+  }
+
+  if (!isFeatureLoadedFromOta(feature.id) && otaReentry) {
+    trySyncFromCache();
   }
 
   if (!isFeatureLoadedFromOta(feature.id)) {
-    throw new Error(formatRemoteBundleError(feature.id, 'not registered'));
+    throw new Error(
+      `OTA feature "${feature.id}" not registered after split bundle load`,
+    );
   }
 
   loadedBundlePaths.set(feature.id, path);
@@ -159,7 +175,13 @@ async function loadFromNativeSplitBundle(
  */
 export async function loadFeatureBundle(
   feature: RemoteFeature,
-  options?: { localPath?: string | null; force?: boolean; otaMode?: boolean },
+  options?: {
+    localPath?: string | null;
+    force?: boolean;
+    otaMode?: boolean;
+    /** Re-register native split segment even when JS registration exists (OTA re-entry). */
+    ensureSegment?: boolean;
+  },
 ): Promise<void> {
   const localPath = options?.localPath ?? null;
   const useOta = options?.otaMode ?? getForceOtaInDev();
@@ -171,13 +193,20 @@ export async function loadFeatureBundle(
     ? isFeatureLoadedFromOta(feature.id)
     : isFeatureLoaded(feature.id);
 
-  if (!options?.force && alreadyLoaded && loadedBundleKeys.has(loadKey)) {
+  if (
+    !options?.force &&
+    !options?.ensureSegment &&
+    alreadyLoaded &&
+    loadedBundleKeys.has(loadKey)
+  ) {
     return;
   }
 
   if (useOta && (localPath || isLocalFileUrl(feature.bundleUrl))) {
     const path = localPath ?? feature.bundleUrl;
-    await loadFromNativeSplitBundle(feature, path);
+    await loadFromNativeSplitBundle(feature, path, {
+      ensureSegment: options?.ensureSegment,
+    });
     loadedBundleKeys.add(loadKey);
     return;
   }
@@ -195,7 +224,9 @@ export async function loadFeatureBundle(
 
   if (localPath || isLocalFileUrl(feature.bundleUrl)) {
     const path = localPath ?? feature.bundleUrl;
-    await loadFromNativeSplitBundle(feature, path);
+    await loadFromNativeSplitBundle(feature, path, {
+      ensureSegment: options?.ensureSegment,
+    });
     loadedBundleKeys.add(loadKey);
     return;
   }

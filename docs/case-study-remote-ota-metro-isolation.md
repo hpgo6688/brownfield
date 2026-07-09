@@ -1,7 +1,8 @@
 # 案例总结：Brownfield RN Remote 业务 Metro / OTA 双路径隔离
 
 > 本文档用于面试复盘：问题背景、根因、方案、方法论与口述要点。  
-> 相关实现文档：[dynamic-multi-bundle.md](./dynamic-multi-bundle.md)
+> 相关实现文档：[dynamic-multi-bundle.md](./dynamic-multi-bundle.md)  
+> **OTA 重复进入专项（面试）**：[interview/ota-reentry-case-study.md](./interview/ota-reentry-case-study.md)
 
 ---
 

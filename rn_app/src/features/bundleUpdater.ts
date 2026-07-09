@@ -29,10 +29,12 @@ import {
 import {
   clearManifestCache,
   DEFAULT_MANIFEST_URL,
+  enrichRemoteFeature,
   fetchFeatureById,
   fetchManifest,
   type RemoteFeature,
 } from './manifest';
+import { wasOtaFeatureLoadedThisSession } from './otaSessionLoad';
 import { clearOtaComponentCache } from './registerFeature';
 import { fetchWithRetry } from './retryWithBackoff';
 
@@ -83,17 +85,41 @@ export function formatRemoteBundleError(featureId: string, cause?: string): stri
     return base;
   }
 
-  if (
+  return base;
+}
+
+function isOtaCacheOrDownloadError(cause: string): boolean {
+  return (
     /Download failed \(404\)/i.test(cause) ||
     /Download failed \(5\d\d\)/i.test(cause) ||
     /not a valid OTA/i.test(cause) ||
-    /not registered/i.test(cause) ||
-    /Hash mismatch/i.test(cause)
-  ) {
-    return base;
+    /Hash mismatch/i.test(cause) ||
+    /Cached bundle file not found/i.test(cause) ||
+    /Manifest unavailable/i.test(cause) ||
+    /RNFS 未链接/i.test(cause)
+  );
+}
+
+/** User-facing load error: cache/download vs split load/register (versions may still match). */
+export function formatFeatureLoadError(
+  featureId: string,
+  cause: string,
+  options?: { remoteVersion?: string | null; localVersion?: string | null },
+): string {
+  if (isOtaCacheOrDownloadError(cause)) {
+    return formatRemoteBundleError(featureId, cause);
   }
 
-  return base;
+  const remote = options?.remoteVersion;
+  const local = options?.localVersion;
+  const versionsMatch =
+    remote != null && local != null && remote !== '0.0.0' && remote === local;
+
+  if (versionsMatch) {
+    return `OTA bundle 加载失败（本地与服务端均为 v${local}，缓存文件正常）。\n\n${cause}`;
+  }
+
+  return `OTA bundle 加载失败。\n\n${cause}`;
 }
 
 export type RemoteCheckResult = {
@@ -175,20 +201,29 @@ export function matchesRemoteRelease(
   );
 }
 
+/** Verify downloaded bundle bytes before writing metadata or promoting pending → active. */
+export function verifyOtaBundleBody(
+  featureId: string,
+  body: string,
+  expectedHash: string,
+): void {
+  const digest = sha256(body);
+  const expected = normalizeHash(expectedHash);
+
+  if (expected !== 'unset' && digest !== expected) {
+    throw new Error(`Hash mismatch for feature "${featureId}"`);
+  }
+
+  if (!validateOtaBundleContent(featureId, body)) {
+    throw new Error(`Downloaded bundle for "${featureId}" is not a valid OTA split bundle`);
+  }
+}
+
 async function verifyAndPersistActive(
   feature: RemoteFeature,
   body: string,
 ): Promise<CachedFeatureMetadata> {
-  const digest = sha256(body);
-  const expected = normalizeHash(feature.hash);
-
-  if (expected !== 'unset' && digest !== expected) {
-    throw new Error(`Hash mismatch for feature "${feature.id}"`);
-  }
-
-  if (!validateOtaBundleContent(feature.id, body)) {
-    throw new Error(`Downloaded bundle for "${feature.id}" is not a valid OTA split bundle`);
-  }
+  verifyOtaBundleBody(feature.id, body, feature.hash);
 
   const localPath = await writeCachedBundle(feature.id, feature.version, body);
   const metadata: CachedFeatureMetadata = {
@@ -209,16 +244,7 @@ async function verifyAndPersistPending(
   feature: RemoteFeature,
   body: string,
 ): Promise<PendingFeatureMetadata> {
-  const digest = sha256(body);
-  const expected = normalizeHash(feature.hash);
-
-  if (expected !== 'unset' && digest !== expected) {
-    throw new Error(`Hash mismatch for feature "${feature.id}"`);
-  }
-
-  if (!validateOtaBundleContent(feature.id, body)) {
-    throw new Error(`Downloaded bundle for "${feature.id}" is not a valid OTA split bundle`);
-  }
+  verifyOtaBundleBody(feature.id, body, feature.hash);
 
   const localPath = await writePendingBundle(feature.id, feature.version, body);
   const metadata: PendingFeatureMetadata = {
@@ -356,7 +382,19 @@ export async function applyPendingFeature(
   const RNFS = require('react-native-fs') as {
     readFile: (path: string, encoding: 'utf8') => Promise<string>;
   };
-  const body = await RNFS.readFile(pendingPath, 'utf8');
+
+  let body: string;
+  try {
+    body = await RNFS.readFile(pendingPath, 'utf8');
+    verifyOtaBundleBody(pending.featureId, body, pending.hash);
+  } catch (error) {
+    await clearStalePendingRelease(featureId, pending);
+    if (__DEV__) {
+      console.warn(`[OTA] pending apply verify failed for ${featureId}`, error);
+    }
+    return null;
+  }
+
   await writeCachedBundle(pending.featureId, pending.version, body);
   await deletePendingBundleByPath(pendingPath);
 
@@ -485,13 +523,32 @@ export async function ensureFeatureCached(
   await reconcileActiveBundleCache(featureId);
 
   const deferredApplied = await applyDeferredPendingIfNeeded(featureId);
-  await stageRemoteFeatureUpdate(featureId, { manifestUrl });
 
   const cached = await readCachedMetadata(featureId);
   const cachedFileReady =
     cached !== null &&
     (await cachedBundleFileExists(cached.localPath)) &&
     (await isCachedBundleUsable(cached.localPath, featureId));
+
+  const sessionReentry =
+    wasOtaFeatureLoadedThisSession(featureId) && deferredApplied === null;
+
+  if (cachedFileReady && cached && sessionReentry) {
+    return {
+      featureId,
+      feature: enrichRemoteFeature(
+        fallbackFeature(featureId, {
+          version: cached.version,
+          hash: cached.hash,
+        }),
+      ),
+      updated: false,
+      bundlePath: cached.localPath,
+      cachedVersion: cached.version,
+    };
+  }
+
+  await stageRemoteFeatureUpdate(featureId, { manifestUrl });
 
   if (cachedFileReady && cached) {
     try {

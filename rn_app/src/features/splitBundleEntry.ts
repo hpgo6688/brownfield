@@ -37,57 +37,86 @@ async function readBundleCode(bundlePath: string): Promise<string | null> {
   return RNFS.readFile(normalizeLocalPath(bundlePath), 'utf8');
 }
 
-function runEntryModule(entryModuleId: number): boolean {
+function runEntryModule(entryModuleId: number): void {
   if (typeof global.__r !== 'function') {
-    return false;
+    throw new Error('Split bundle runtime unavailable (__r missing)');
   }
 
-  try {
-    global.__r(entryModuleId);
-    return true;
-  } catch (error) {
-    if (__DEV__) {
-      console.warn(`[bundleLoader] __r(${entryModuleId}) failed`, error);
-    }
-    return false;
-  }
+  global.__r(entryModuleId);
 }
 
 /**
  * Re-run split bundle entry so registerFeature() executes again after
  * clearFeatureRegistration(). Must run AFTER SplitBundleLoader.load() so
  * segment module ids exist in the runtime.
- *
- * Does not eval the full bundle — that triggers LogBox errors on invalid files.
  */
 export async function executeSplitBundleEntry(
   bundlePath: string,
-  options?: { featureId?: string },
+  options?: { featureId?: string; requireRegistration?: boolean },
 ): Promise<boolean> {
   const path = normalizeLocalPath(bundlePath);
   const code = await readBundleCode(path);
   if (!code) {
+    const message = `cannot read split bundle: ${path}`;
+    if (options?.requireRegistration) {
+      throw new Error(message);
+    }
     if (__DEV__) {
-      console.warn(`[bundleLoader] cannot read split bundle: ${path}`);
+      console.warn(`[bundleLoader] ${message}`);
     }
     return false;
   }
 
   const entryModuleId = parseSplitBundleEntryModuleId(code);
   if (entryModuleId == null) {
+    const message = `split bundle missing entry __r(): ${path}`;
+    if (options?.requireRegistration) {
+      throw new Error(message);
+    }
     if (__DEV__) {
-      console.warn(`[bundleLoader] split bundle missing entry __r(): ${path}`);
+      console.warn(`[bundleLoader] ${message}`);
     }
     return false;
   }
 
   const featureId = options?.featureId;
 
-  runEntryModule(entryModuleId);
+  try {
+    runEntryModule(entryModuleId);
+  } catch (error) {
+    const cause = error instanceof Error ? error.message : String(error);
+    const message = `split bundle entry __r(${entryModuleId}) failed: ${cause}`;
+    if (options?.requireRegistration) {
+      throw new Error(message);
+    }
+    if (__DEV__) {
+      console.warn(`[bundleLoader] ${message}`);
+    }
+    return false;
+  }
+
   if (featureId && isFeatureLoadedFromOta(featureId)) {
     return true;
   }
 
-  runEntryModule(entryModuleId);
-  return featureId ? isFeatureLoadedFromOta(featureId) : true;
+  try {
+    runEntryModule(entryModuleId);
+  } catch (error) {
+    const cause = error instanceof Error ? error.message : String(error);
+    const message = `split bundle entry retry __r(${entryModuleId}) failed: ${cause}`;
+    if (options?.requireRegistration) {
+      throw new Error(message);
+    }
+    if (__DEV__) {
+      console.warn(`[bundleLoader] ${message}`);
+    }
+    return false;
+  }
+
+  const registered = featureId ? isFeatureLoadedFromOta(featureId) : true;
+  if (!registered && options?.requireRegistration) {
+    throw new Error(`split bundle entry did not register feature "${featureId}"`);
+  }
+
+  return registered;
 }
