@@ -32,7 +32,8 @@ function isFeatureOwnedBySplit(modulePath) {
   return (
     /\/bundles\/ota_(order|promo)\//.test(modulePath) ||
     /\/screens\/remote\/RemoteScreenShell\.tsx$/.test(modulePath) ||
-    /\/screens\/remote\/components\//.test(modulePath)
+    /\/screens\/remote\/components\//.test(modulePath) ||
+    /\/screens\/remote\/order\//.test(modulePath)
   );
 }
 

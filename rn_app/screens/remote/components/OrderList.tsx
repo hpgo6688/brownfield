@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ORDER_FIXTURES } from '../order/fixtures';
 
 export type OrderItem = {
   id: string;
@@ -7,22 +8,19 @@ export type OrderItem = {
   amount: string;
 };
 
-const ORDERS: OrderItem[] = [
-  { id: '20260708001', title: '春季限定礼盒', status: '待发货', amount: '¥128.00' },
-  { id: '20260707002', title: '会员续费 · 年度', status: '已完成', amount: '¥99.00' },
-  { id: '20260706003', title: '活动周边 · 帆布袋', status: '配送中', amount: '¥39.00' },
-];
-
 type OrderListProps = {
   statusColor?: string;
+  onPressOrder?: (order: OrderItem) => void;
 };
 
-export function OrderList({ statusColor = '#EA580C' }: OrderListProps) {
+export function OrderList({
+  statusColor = '#EA580C',
+  onPressOrder,
+}: OrderListProps) {
   return (
     <View style={styles.card}>
-      {ORDERS.map((order, index) => (
-        <View key={order.id}>
-          {index > 0 ? <View style={styles.divider} /> : null}
+      {ORDER_FIXTURES.map((order, index) => {
+        const row = (
           <View style={styles.row}>
             <View style={styles.orderInfo}>
               <Text style={styles.orderTitle}>{order.title}</Text>
@@ -30,11 +28,24 @@ export function OrderList({ statusColor = '#EA580C' }: OrderListProps) {
             </View>
             <View style={styles.orderMeta}>
               <Text style={styles.amount}>{order.amount}</Text>
-              <Text style={[styles.status, { color: statusColor }]}>{order.status}</Text>
+              <Text style={[styles.status, { color: statusColor }]}>
+                {order.status}
+              </Text>
             </View>
           </View>
-        </View>
-      ))}
+        );
+
+        return (
+          <View key={order.id}>
+            {index > 0 ? <View style={styles.divider} /> : null}
+            {onPressOrder ? (
+              <Pressable onPress={() => onPressOrder(order)}>{row}</Pressable>
+            ) : (
+              row
+            )}
+          </View>
+        );
+      })}
     </View>
   );
 }

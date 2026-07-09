@@ -105,12 +105,44 @@ flowchart TB
 
 **记住：** `bundles/ota_*/screens/` **不会**被 `npm start` 热重载。只有 rebuild + upload 后，OTA 模式才会用到。
 
+### 订单多级页面（列表 → 详情 → 物流）
+
+订单 Remote 功能内挂载 `screens/remote/order/OrderNavigator`（React Navigation native stack）。Metro 与 OTA wrapper 共用同一套路由；wrapper 仅保留 `RemoteHero` badge 差异。
+
+| 路由 | 进入方式 |
+|------|----------|
+| `OrderList` | 打开订单入口（初始页） |
+| `OrderDetail` | 点击列表项 |
+| `OrderTracking` | 详情页「查看物流追踪」 |
+
+**返回行为（v1）：**
+
+- 子页 **「← 返回」** → pop RN 栈一级
+- 原生导航栏左上角返回 → **退出整个订单功能**（未做 Swift ↔ RN 返回委托）
+
+**验证步骤：**
+
+```bash
+# Metro
+cd rn_app && npm start
+# Debug + Metro 模式 → 订单 → 列表 → 详情 → 物流 → 页内返回两次
+
+# OTA
+cd rn_app && npm run build:bundles
+cd ../bundle-server
+./scripts/upload-bundle.sh order <version> ../rn_app/dist/bundles/ota_order.<version>.ios.jsbundle
+# Debug + OTA 模式 → 重复上述导航
+```
+
+日常 UI 改 `screens/remote/order/` 或 `components/OrderList.tsx`；OTA 需 rebuild + upload 后 `order/` 模块随 `ota_order` bundle 下发。
+
 ### 目录职责（目标布局）
 
 ```
 rn_app/
 ├── screens/remote/                 ← Metro dev：日常改这里
 │   ├── components/                 ← 共享业务 UI（OrderList 等）
+│   ├── order/                      ← 订单多级 RN 导航（OrderNavigator）
 │   ├── OrderScreen.tsx             ← Metro 包装：Remote · 远程业务 badge
 │   └── PromoScreen.tsx
 │
