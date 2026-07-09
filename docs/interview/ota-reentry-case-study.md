@@ -1,6 +1,7 @@
 # 面试案例：Brownfield OTA Split Bundle 重复进入
 
 > **用途**：面试复盘（STAR / 架构 / 根因 / 最终方案）。  
+> **口述速查**：[ota-reentry-cheat-sheet.md](./ota-reentry-cheat-sheet.md)（半页纸）  
 > **项目**：Native Shell + RN 主包 + Remote OTA split bundle（order / promo）。  
 > **栈**：RN 0.86 · New Architecture（Fabric / Bridgeless）· iOS `SplitBundleLoader` · Metro split bundle。
 
