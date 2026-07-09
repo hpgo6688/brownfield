@@ -1,12 +1,16 @@
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StyleSheet, Text, View } from 'react-native';
 import { OrderBackRow } from '../components/OrderBackRow';
 import { OrderPageShell } from '../components/OrderPageShell';
 import { getOrderById } from '../fixtures';
-import { useOrderNavigation } from '../OrderNavigationContext';
+import type { OrderStackParamList } from '../types';
 
-type OrderTrackingScreenProps = {
-  orderId: string;
-};
+type OrderTrackingRouteProp = RouteProp<OrderStackParamList, 'OrderTracking'>;
+type OrderTrackingNavigationProp = NativeStackNavigationProp<
+  OrderStackParamList,
+  'OrderTracking'
+>;
 
 const TRACKING_STEPS = [
   { time: '07-08 14:20', event: '包裹已揽收' },
@@ -14,13 +18,15 @@ const TRACKING_STEPS = [
   { time: '07-09 09:30', event: '派送中' },
 ];
 
-export function OrderTrackingScreen({ orderId }: OrderTrackingScreenProps) {
-  const { goBack } = useOrderNavigation();
+export function OrderTrackingScreen() {
+  const navigation = useNavigation<OrderTrackingNavigationProp>();
+  const route = useRoute<OrderTrackingRouteProp>();
+  const { orderId } = route.params;
   const order = getOrderById(orderId);
 
   return (
     <OrderPageShell>
-      <OrderBackRow title="物流追踪" onBack={goBack} />
+      <OrderBackRow title="物流追踪" onBack={() => navigation.goBack()} />
 
       {order ? (
         <Text style={styles.subtitle}>

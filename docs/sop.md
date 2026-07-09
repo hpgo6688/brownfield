@@ -107,6 +107,20 @@ npm run brownfield:package:ios:debug
 # Xcode：Product → Clean Build Folder，再 Run
 ```
 
+### 订单 React Navigation 原生依赖（screens / gesture-handler）
+
+order 多级页使用 `@react-navigation/native-stack`，BrownfieldLib **必须**包含 `react-native-screens` 与 `react-native-gesture-handler`。
+
+```bash
+cd rn_app
+npm install                                    # 更新 package.json 后
+cd ios && pod install && cd ..
+npm run brownfield:package:ios:debug:sim       # 模拟器 Debug 包
+# Xcode：重新选择 ios/.brownfield/package/build 中的 BrownfieldLib → Clean → Run
+```
+
+未重建 BrownfieldLib 时典型报错：`unimplemented component: <RNSScreenStack>`、`RNGestureHandlerModule not found`。
+
 ---
 
 ## 4. SOP-B：Remote 业务日常开发（Metro 模式）

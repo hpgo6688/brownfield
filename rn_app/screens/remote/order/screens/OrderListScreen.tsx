@@ -1,11 +1,18 @@
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ScrollView, StyleSheet } from 'react-native';
 import { OrderList, RemoteHero } from '../../components';
 import { useOrderFeatureConfig } from '../OrderFeatureContext';
-import { useOrderNavigation } from '../OrderNavigationContext';
+import type { OrderStackParamList } from '../types';
+
+type OrderListNavigationProp = NativeStackNavigationProp<
+  OrderStackParamList,
+  'OrderList'
+>;
 
 export function OrderListScreen() {
   const { statusColor, hero } = useOrderFeatureConfig();
-  const { navigate } = useOrderNavigation();
+  const navigation = useNavigation<OrderListNavigationProp>();
 
   return (
     <ScrollView
@@ -16,7 +23,7 @@ export function OrderListScreen() {
       <OrderList
         statusColor={statusColor}
         onPressOrder={order =>
-          navigate({ name: 'OrderDetail', params: { orderId: order.id } })
+          navigation.navigate('OrderDetail', { orderId: order.id })
         }
       />
     </ScrollView>

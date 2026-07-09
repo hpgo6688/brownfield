@@ -1,21 +1,27 @@
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { OrderBackRow } from '../components/OrderBackRow';
 import { OrderPageShell } from '../components/OrderPageShell';
 import { getOrderById } from '../fixtures';
-import { useOrderNavigation } from '../OrderNavigationContext';
+import type { OrderStackParamList } from '../types';
 
-type OrderDetailScreenProps = {
-  orderId: string;
-};
+type OrderDetailRouteProp = RouteProp<OrderStackParamList, 'OrderDetail'>;
+type OrderDetailNavigationProp = NativeStackNavigationProp<
+  OrderStackParamList,
+  'OrderDetail'
+>;
 
-export function OrderDetailScreen({ orderId }: OrderDetailScreenProps) {
-  const { navigate, goBack } = useOrderNavigation();
+export function OrderDetailScreen() {
+  const navigation = useNavigation<OrderDetailNavigationProp>();
+  const route = useRoute<OrderDetailRouteProp>();
+  const { orderId } = route.params;
   const order = getOrderById(orderId);
 
   if (!order) {
     return (
       <OrderPageShell>
-        <OrderBackRow title="订单不存在" onBack={goBack} />
+        <OrderBackRow title="订单不存在" onBack={() => navigation.goBack()} />
         <Text style={styles.missing}>未找到订单 #{orderId}</Text>
       </OrderPageShell>
     );
@@ -23,7 +29,7 @@ export function OrderDetailScreen({ orderId }: OrderDetailScreenProps) {
 
   return (
     <OrderPageShell>
-      <OrderBackRow title="订单详情" onBack={goBack} />
+      <OrderBackRow title="订单详情" onBack={() => navigation.goBack()} />
 
       <View style={styles.card}>
         <Text style={styles.label}>商品</Text>
@@ -48,7 +54,7 @@ export function OrderDetailScreen({ orderId }: OrderDetailScreenProps) {
       <Pressable
         style={styles.actionButton}
         onPress={() =>
-          navigate({ name: 'OrderTracking', params: { orderId: order.id } })
+          navigation.navigate('OrderTracking', { orderId: order.id })
         }>
         <Text style={styles.actionLabel}>查看物流追踪</Text>
       </Pressable>

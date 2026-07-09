@@ -2,7 +2,9 @@
 
 - [x] 1.1 Add `@react-navigation/native`, `@react-navigation/native-stack`, `react-native-screens`, and required peer deps to `rn_app/package.json`
 - [x] 1.2 Run `npm install` in `rn_app/` and `pod install` under `rn_app/ios/`
-- [ ] 1.3 Rebuild BrownfieldLib — **可选**（已改用 JS Stack，不依赖 `react-native-screens`；仅当新增其他 native 模块时再执行 `brownfield:package:ios:debug:sim`）
+- [ ] 1.3 Rebuild BrownfieldLib — **见 `order-react-navigation` 变更**（已恢复 React Navigation native-stack，需 `brownfield:package:ios:debug:sim`）
+
+> **Note:** 自研 `OrderPageStack` 实现已迁移至 OpenSpec 变更 `order-react-navigation`。
 
 ## 2. Shared order navigation module
 

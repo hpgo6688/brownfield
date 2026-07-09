@@ -14,7 +14,7 @@
 
 ## 订单多级页面（Metro dev）
 
-订单功能内使用 React Navigation native stack（`screens/remote/order/`）：
+订单功能内使用 **React Navigation native-stack**（`screens/remote/order/`）：
 
 | 路由 | 说明 |
 |------|------|
@@ -22,6 +22,8 @@
 | `OrderDetail` | 详情（点击列表项进入） |
 | `OrderTracking` | 物流追踪（第三级） |
 
+- 依赖原生模块：`react-native-screens`、`react-native-gesture-handler`（`index.js` 首行 import gesture-handler）
+- **新增/升级 navigation 依赖后**须 `pod install` + `npm run brownfield:package:ios:debug:sim` 重建 BrownfieldLib，否则壳内会报 `RNSScreenStack` / `RNGestureHandlerModule` 错误
 - 子页使用应用内 **「← 返回」** pop RN 栈
 - v1：原生导航栏左上角返回仍会 **退出整个订单功能**（未做原生返回委托）
 - 日常改 `order/` 或 `components/OrderList.tsx` → Metro HMR 即时生效

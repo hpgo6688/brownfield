@@ -1,27 +1,17 @@
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { OrderFeatureProvider, type OrderHeroConfig } from './OrderFeatureContext';
-import { OrderPageStack } from './OrderPageStack';
 import { OrderDetailScreen } from './screens/OrderDetailScreen';
 import { OrderListScreen } from './screens/OrderListScreen';
 import { OrderTrackingScreen } from './screens/OrderTrackingScreen';
-import type { OrderRoute } from './types';
+import type { OrderStackParamList } from './types';
+
+const Stack = createNativeStackNavigator<OrderStackParamList>();
 
 type OrderNavigatorProps = {
   statusColor?: string;
   hero: OrderHeroConfig;
 };
-
-function renderOrderRoute(route: OrderRoute) {
-  switch (route.name) {
-    case 'OrderList':
-      return <OrderListScreen />;
-    case 'OrderDetail':
-      return <OrderDetailScreen orderId={route.params.orderId} />;
-    case 'OrderTracking':
-      return <OrderTrackingScreen orderId={route.params.orderId} />;
-    default:
-      return null;
-  }
-}
 
 export function OrderNavigator({
   statusColor = '#EA580C',
@@ -29,7 +19,17 @@ export function OrderNavigator({
 }: OrderNavigatorProps) {
   return (
     <OrderFeatureProvider statusColor={statusColor} hero={hero}>
-      <OrderPageStack renderRoute={renderOrderRoute} />
+      <NavigationContainer>
+        <Stack.Navigator
+          screenOptions={{
+            headerShown: false,
+            animation: 'slide_from_right',
+          }}>
+          <Stack.Screen name="OrderList" component={OrderListScreen} />
+          <Stack.Screen name="OrderDetail" component={OrderDetailScreen} />
+          <Stack.Screen name="OrderTracking" component={OrderTrackingScreen} />
+        </Stack.Navigator>
+      </NavigationContainer>
     </OrderFeatureProvider>
   );
 }

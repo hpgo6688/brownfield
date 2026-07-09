@@ -33,7 +33,10 @@ function isFeatureOwnedBySplit(modulePath) {
     /\/bundles\/ota_(order|promo)\//.test(modulePath) ||
     /\/screens\/remote\/RemoteScreenShell\.tsx$/.test(modulePath) ||
     /\/screens\/remote\/components\//.test(modulePath) ||
-    /\/screens\/remote\/order\//.test(modulePath)
+    /\/screens\/remote\/order\//.test(modulePath) ||
+    /\/node_modules\/@react-navigation\//.test(modulePath) ||
+    /\/node_modules\/react-native-screens\//.test(modulePath) ||
+    /\/node_modules\/react-native-gesture-handler\//.test(modulePath)
   );
 }
 
