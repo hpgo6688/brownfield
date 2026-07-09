@@ -4,6 +4,7 @@ set -euo pipefail
 # Example CI upload script for Scheme 2 OTA bundles.
 #
 # Usage:
+#   ./scripts/upload-bundle.sh shared 1.0.0 dist/bundles/ota_shared.1.0.0.ios.jsbundle
 #   ./scripts/upload-bundle.sh order 1.0.0 dist/bundles/ota_order.1.0.0.ios.jsbundle
 #
 # Env:

@@ -54,6 +54,10 @@ jest.mock('../otaSplitHostPreload', () => ({
   preloadOtaSplitHostModules: jest.fn(),
 }));
 
+jest.mock('../sharedBundleUpdater', () => ({
+  ensureSharedSegmentLoaded: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('../segmentRegistry', () => ({
   getFeatureSegmentId: jest.fn(() => 'order-segment'),
 }));

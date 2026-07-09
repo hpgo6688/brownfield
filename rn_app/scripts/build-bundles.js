@@ -11,6 +11,8 @@ const projectRoot = path.join(__dirname, '..');
 const outputDir = path.join(projectRoot, '..', 'bundle-server', 'dist', 'bundles');
 const isDev = process.argv.includes('--dev');
 
+const FEATURE_SIZE_WARN_BYTES = 600 * 1024;
+
 function readVersion() {
   const versionFlagIndex = process.argv.indexOf('--version');
   if (versionFlagIndex !== -1 && process.argv[versionFlagIndex + 1]) {
@@ -28,16 +30,47 @@ function sha256File(filePath) {
   return `sha256:${createHash('sha256').update(buffer).digest('hex')}`;
 }
 
-function isFeatureOwnedBySplit(modulePath) {
+function formatBytes(sizeBytes) {
+  if (sizeBytes >= 1024 * 1024) {
+    return `${(sizeBytes / (1024 * 1024)).toFixed(2)} MB`;
+  }
+  return `${(sizeBytes / 1024).toFixed(1)} KB`;
+}
+
+function isSharedOwnedBySplit(modulePath) {
   return (
-    /\/bundles\/ota_(order|promo)\//.test(modulePath) ||
+    /\/bundles\/ota_shared\//.test(modulePath) ||
     /\/screens\/remote\/RemoteScreenShell\.tsx$/.test(modulePath) ||
     /\/screens\/remote\/components\//.test(modulePath) ||
-    /\/screens\/remote\/order\//.test(modulePath) ||
+    /\/screens\/remote\/navigation\//.test(modulePath) ||
     /\/node_modules\/@react-navigation\//.test(modulePath) ||
     /\/node_modules\/react-native-screens\//.test(modulePath) ||
-    /\/node_modules\/react-native-gesture-handler\//.test(modulePath)
+    /\/node_modules\/react-native-gesture-handler\//.test(modulePath) ||
+    /\/node_modules\/react-native-safe-area-context\//.test(modulePath)
   );
+}
+
+function isFeatureOwnedBySplit(modulePath, featureId) {
+  if (featureId === 'shared') {
+    return isSharedOwnedBySplit(modulePath);
+  }
+
+  if (featureId === 'order') {
+    return (
+      /\/bundles\/ota_order\//.test(modulePath) ||
+      /\/screens\/remote\/order\//.test(modulePath)
+    );
+  }
+
+  if (featureId === 'promo') {
+    return (
+      /\/bundles\/ota_promo\//.test(modulePath) ||
+      /\/screens\/remote\/PromoNavigator/.test(modulePath) ||
+      /\/screens\/remote\/promo\//.test(modulePath)
+    );
+  }
+
+  return false;
 }
 
 function isCoreHostModule(modulePath) {
@@ -65,20 +98,26 @@ function isCoreHostModule(modulePath) {
   return false;
 }
 
-function shouldExcludeFromSplitModule(module, mainModulePaths, splitModulePaths) {
+function shouldExcludeFromSplitModule(
+  module,
+  mainModulePaths,
+  splitModulePaths,
+  splitTarget,
+) {
   const modulePath = module.path;
 
-  if (isFeatureOwnedBySplit(modulePath)) {
+  if (isFeatureOwnedBySplit(modulePath, splitTarget)) {
     return false;
+  }
+
+  if (splitTarget !== 'shared' && isSharedOwnedBySplit(modulePath)) {
+    return true;
   }
 
   if (isCoreHostModule(modulePath)) {
     return true;
   }
 
-  // Host-only modules (FeatureHost graph) stay out of split. Shared deps that
-  // the split entry also needs (e.g. use-latest-callback for React Navigation)
-  // must remain in the split — Metro dev lazy main may not register them yet.
   if (mainModulePaths.has(modulePath) && !splitModulePaths.has(modulePath)) {
     return true;
   }
@@ -106,7 +145,12 @@ async function collectMainModulePaths(config) {
   return new Set(
     [...graph.dependencies.values()]
       .map(module => module.path)
-      .filter(modulePath => !isFeatureOwnedBySplit(modulePath)),
+      .filter(
+        modulePath =>
+          !isSharedOwnedBySplit(modulePath) &&
+          !isFeatureOwnedBySplit(modulePath, 'order') &&
+          !isFeatureOwnedBySplit(modulePath, 'promo'),
+      ),
   );
 }
 
@@ -154,14 +198,21 @@ async function buildBundle(metroServer, options) {
   );
 }
 
-function auditSplitExternalDeps(bundlePath, mainBundlePath) {
+function collectDefinedModuleIds(code) {
+  return new Set([...code.matchAll(/},(\d+),\[/g)].map(match => match[1]));
+}
+
+function auditSplitExternalDeps(bundlePath, mainBundlePath, sharedBundlePath) {
   const splitCode = fs.readFileSync(bundlePath, 'utf8');
   const mainCode = fs.readFileSync(mainBundlePath, 'utf8');
-  const defined = code =>
-    new Set([...code.matchAll(/},(\d+),\[/g)].map(match => match[1]));
-  const splitDefined = defined(splitCode);
-  const mainDefined = defined(mainCode);
-  const external = new Set();
+  const splitDefined = collectDefinedModuleIds(splitCode);
+  const mainDefined = collectDefinedModuleIds(mainCode);
+  const sharedDefined = sharedBundlePath
+    ? collectDefinedModuleIds(fs.readFileSync(sharedBundlePath, 'utf8'))
+    : new Set();
+
+  const externalMainOnly = new Set();
+  const externalShared = new Set();
 
   const modulePattern = /__d\(function[^]*?\},(\d+),\[([^\]]*)\]/g;
   let match;
@@ -171,16 +222,31 @@ function auditSplitExternalDeps(bundlePath, mainBundlePath) {
       .map(dep => dep.trim())
       .filter(Boolean);
     for (const dep of deps) {
-      if (!splitDefined.has(dep) && mainDefined.has(dep)) {
-        external.add(dep);
+      if (splitDefined.has(dep)) {
+        continue;
+      }
+      if (sharedDefined.has(dep)) {
+        externalShared.add(dep);
+        continue;
+      }
+      if (mainDefined.has(dep)) {
+        externalMainOnly.add(dep);
       }
     }
   }
 
-  return [...external];
+  return {
+    mainOnly: [...externalMainOnly],
+    shared: [...externalShared],
+  };
 }
 
-async function createSplitMetroServer(baseConfig, mainModulePaths, splitEntry) {
+async function createSplitMetroServer(
+  baseConfig,
+  mainModulePaths,
+  splitEntry,
+  splitTarget,
+) {
   const splitModulePaths = await collectSplitModulePaths(baseConfig, splitEntry);
   console.log(`Split module count (${splitEntry}): ${splitModulePaths.size}`);
 
@@ -189,7 +255,12 @@ async function createSplitMetroServer(baseConfig, mainModulePaths, splitEntry) {
       ...baseConfig.serializer,
       getModulesRunBeforeMainModule: () => [],
       processModuleFilter: module => {
-        return !shouldExcludeFromSplitModule(module, mainModulePaths, splitModulePaths);
+        return !shouldExcludeFromSplitModule(
+          module,
+          mainModulePaths,
+          splitModulePaths,
+          splitTarget,
+        );
       },
     },
   });
@@ -218,6 +289,16 @@ const bundles = [
     entry: 'index.js',
     output: 'main.ios.jsbundle',
     split: false,
+    splitTarget: null,
+  },
+  {
+    name: 'ota_shared',
+    featureId: 'shared',
+    segmentId: featureSegments.shared,
+    entry: 'bundles/ota_shared/index.js',
+    output: `ota_shared.${releaseVersion}.ios.jsbundle`,
+    split: true,
+    splitTarget: 'shared',
   },
   {
     name: 'ota_order',
@@ -226,6 +307,7 @@ const bundles = [
     entry: 'bundles/ota_order/index.js',
     output: `ota_order.${releaseVersion}.ios.jsbundle`,
     split: true,
+    splitTarget: 'order',
   },
   {
     name: 'ota_promo',
@@ -234,6 +316,7 @@ const bundles = [
     entry: 'bundles/ota_promo/index.js',
     output: `ota_promo.${releaseVersion}.ios.jsbundle`,
     split: true,
+    splitTarget: 'promo',
   },
 ];
 
@@ -253,10 +336,12 @@ async function main() {
   const buildManifest = {
     version: releaseVersion,
     builtAt: new Date().toISOString(),
+    sharedBundle: null,
     bundles: [],
   };
 
   const mainMetroServer = await runMetro(baseConfig, { watch: false });
+  const sizeReport = [];
 
   try {
     for (const bundle of bundles) {
@@ -264,7 +349,12 @@ async function main() {
       console.log(`\n→ ${bundle.name}${bundle.split ? ' (split/modulesOnly)' : ''}`);
 
       const metroServer = bundle.split
-        ? await createSplitMetroServer(baseConfig, mainModulePaths, bundle.entry)
+        ? await createSplitMetroServer(
+            baseConfig,
+            mainModulePaths,
+            bundle.entry,
+            bundle.splitTarget,
+          )
         : mainMetroServer;
 
       try {
@@ -281,11 +371,23 @@ async function main() {
         if (bundle.split) {
           finalizeSplitBundle(outputPath, bundle.entry);
           const mainBundlePath = path.join(outputDir, 'main.ios.jsbundle');
+          const sharedBundlePath = path.join(
+            outputDir,
+            `ota_shared.${releaseVersion}.ios.jsbundle`,
+          );
           if (fs.existsSync(mainBundlePath)) {
-            const external = auditSplitExternalDeps(outputPath, mainBundlePath);
-            if (external.length > 0) {
+            const audit = auditSplitExternalDeps(
+              outputPath,
+              mainBundlePath,
+              bundle.splitTarget === 'shared' ? null : sharedBundlePath,
+            );
+            if (audit.mainOnly.length > 0) {
               console.warn(
-                `[split-audit] ${bundle.name} still references ${external.length} main-only module id(s): ${external.slice(0, 8).join(', ')}${external.length > 8 ? '…' : ''}`,
+                `[split-audit] ${bundle.name} still references ${audit.mainOnly.length} main-only module id(s): ${audit.mainOnly.slice(0, 8).join(', ')}${audit.mainOnly.length > 8 ? '…' : ''}`,
+              );
+            } else if (bundle.splitTarget !== 'shared' && audit.shared.length > 0) {
+              console.log(
+                `[split-audit] ${bundle.name} references ${audit.shared.length} shared-segment module id(s) (expected)`,
               );
             } else {
               console.log(`[split-audit] ${bundle.name} has no main-only external deps`);
@@ -300,7 +402,7 @@ async function main() {
 
       const hash = sha256File(outputPath);
       const sizeBytes = fs.statSync(outputPath).size;
-      buildManifest.bundles.push({
+      const entry = {
         featureId: bundle.featureId,
         segmentId: bundle.segmentId,
         name: bundle.name,
@@ -308,7 +410,31 @@ async function main() {
         file: bundle.output,
         hash,
         sizeBytes,
-      });
+      };
+
+      if (bundle.featureId === 'shared') {
+        buildManifest.sharedBundle = {
+          version: releaseVersion,
+          hash,
+          segmentId: bundle.segmentId,
+          file: bundle.output,
+          sizeBytes,
+        };
+      } else {
+        buildManifest.bundles.push(entry);
+      }
+
+      sizeReport.push({ name: bundle.name, sizeBytes });
+      console.log(`[size] ${bundle.name}: ${formatBytes(sizeBytes)} (${sizeBytes} bytes)`);
+
+      if (
+        (bundle.name === 'ota_order' || bundle.name === 'ota_promo') &&
+        sizeBytes > FEATURE_SIZE_WARN_BYTES
+      ) {
+        console.warn(
+          `[size] ${bundle.name} exceeds ${formatBytes(FEATURE_SIZE_WARN_BYTES)} target — consider moving more deps to ota_shared`,
+        );
+      }
     }
   } finally {
     await mainMetroServer.end();
@@ -316,6 +442,11 @@ async function main() {
 
   const manifestPath = path.join(outputDir, 'build-manifest.json');
   fs.writeFileSync(manifestPath, `${JSON.stringify(buildManifest, null, 2)}\n`);
+
+  console.log('\n[size] Summary:');
+  for (const row of sizeReport) {
+    console.log(`  ${row.name}: ${formatBytes(row.sizeBytes)}`);
+  }
 
   console.log(`\nDone. Bundles written to ${outputDir}`);
   console.log(`Build manifest: ${manifestPath}`);

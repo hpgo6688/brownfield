@@ -120,6 +120,7 @@ async function loadOtaFeatureScreen(
     localPath: updateResult.bundlePath,
     otaMode: true,
     ensureSegment: true,
+    manifestUrl,
   });
 
   let component = getFeatureComponent(featureId, { otaOnly: true });
@@ -163,6 +164,7 @@ async function refreshOtaEntryInBackground(
       otaMode: true,
       ensureSegment: true,
       warmReentry: true,
+      manifestUrl,
     });
   } catch (error) {
     if (__DEV__) {

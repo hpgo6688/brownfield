@@ -216,7 +216,24 @@ async function trySessionUsabilityHit(path: string): Promise<boolean> {
 }
 
 /** Sync validation of downloaded / cached OTA split bundle text. */
+export function validateSharedBundleContent(code: string): boolean {
+  if (code.length < MIN_USABLE_BUNDLE_BYTES) {
+    return false;
+  }
+
+  if (!code.includes('RemoteScreenShell') && !code.includes('@react-navigation')) {
+    return false;
+  }
+
+  return /__r\(\d+\);/.test(code);
+}
+
+/** Sync validation of downloaded / cached OTA split bundle text. */
 export function validateOtaBundleContent(featureId: string, code: string): boolean {
+  if (featureId === 'shared') {
+    return validateSharedBundleContent(code);
+  }
+
   if (code.length < MIN_USABLE_BUNDLE_BYTES) {
     return false;
   }

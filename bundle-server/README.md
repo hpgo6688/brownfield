@@ -40,11 +40,12 @@ npm run build:bundles:dev    # 日常 DEV；发版用 npm run build:bundles
 cd ../bundle-server
 npm run dev                  # 确保服务已启动
 
+./scripts/upload-bundle.sh shared 0.0.7 dist/bundles/ota_shared.0.0.7.ios.jsbundle
 ./scripts/upload-bundle.sh order 0.0.7 dist/bundles/ota_order.0.0.7.ios.jsbundle
 ./scripts/upload-bundle.sh promo 0.0.7 dist/bundles/ota_promo.0.0.7.ios.jsbundle
 
-# 3. 校验 manifest
-curl -s http://127.0.0.1:3001/api/manifest | jq '.features[] | {id, version, hash}'
+# 3. 校验 manifest（含 sharedBundle）
+curl -s http://127.0.0.1:3001/api/manifest | jq '{sharedBundle, features: [.features[] | {id, version, sizeBytes}]}'
 ```
 
 `upload-bundle.sh` 用法：

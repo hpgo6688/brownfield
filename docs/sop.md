@@ -160,37 +160,60 @@ cd rn_app && npm run verify:ota-scope
 
 ## 5. SOP-C：Remote OTA 发版
 
-**适用：** 将 Remote 子 bundle 发布到 `bundle-server`，供 App OTA 模式加载。
+**适用：** 将 Remote 子 bundle（含公共 `shared` split + 各 feature split）发布到 `bundle-server`，供 App OTA 模式加载。
+
+OTA 采用 **shared segment 0 + feature segment 1** 两段式 split：客户端先 load `ota_shared`，再 load `order` / `promo`。Manifest 顶层含 `sharedBundle` 字段。详见 [dynamic-multi-bundle.md](./dynamic-multi-bundle.md#ota-公共-splitota_shared)。
 
 ### 5.1 发布前检查
 
 - [ ] UI 改动已在 Metro 模式验证
-- [ ] 版本号符合 semver（如 `0.0.3`）
+- [ ] 版本号符合 semver（如 `0.0.7`）；**shared / order / promo 同一发版应使用相同版本号**
 - [ ] `bundle-server` 可访问
+- [ ] 首次部署或 DB 无 `shared` 入口时，需 `npm run db:seed`（见 5.2）
 - [ ] 若只改共享 UI（`components/`），OTA 包装层无特殊改动时可只 rebuild
 
-### 5.2 构建子 bundle
+### 5.2 完整发版流程（推荐）
 
 ```bash
+# 1. 构建（日常 dev 版本号用 --dev；正式发版用 build:bundles）
 cd rn_app
-npm run build:bundles
-# 产物示例：dist/bundles/ota_order.0.0.3.ios.jsbundle
+npm run build:bundles:dev   # 或 npm run build:bundles
+# 产物：dist/bundles/ota_shared.<version>.ios.jsbundle
+#       dist/bundles/ota_order.<version>.ios.jsbundle
+#       dist/bundles/ota_promo.<version>.ios.jsbundle
+
+# 2. 启动 bundle-server（首次需 seed shared 入口）
+cd ../bundle-server
+npm run db:seed   # 首次或清理 DB 后；seed shared / order / promo
+npm run dev
+
+# 3. 上传 shared + 各 feature（版本号与构建一致，如 0.0.7）
+./scripts/upload-bundle.sh shared 0.0.7 ../rn_app/dist/bundles/ota_shared.0.0.7.ios.jsbundle
+./scripts/upload-bundle.sh order  0.0.7 ../rn_app/dist/bundles/ota_order.0.0.7.ios.jsbundle
+./scripts/upload-bundle.sh promo  0.0.7 ../rn_app/dist/bundles/ota_promo.0.0.7.ios.jsbundle
+
+# 4. 校验 manifest
+curl -s http://127.0.0.1:3001/api/manifest | jq '{sharedBundle, features: [.features[] | {id, version, sizeBytes}]}'
 ```
+
+`npm run dev` 会自动 `prisma db push`；`db:seed` 在已有数据时通常可跳过，但 **首次** 或重置 DB 后必须执行以注册 `shared` 入口。
 
 ### 5.3 上传（二选一）
 
 **方式 1 — Admin UI（推荐）**
 
 1. 打开 http://127.0.0.1:3001/admin
-2. 选择 Remote 入口（如 `order`）
-3. 填写版本号，上传 `.jsbundle`
+2. 依次上传 **shared**、**order**、**promo**（或需更新的入口）
+3. 填写相同 semver，上传对应 `.jsbundle`
 4. 勾选「上传后立即上线」，或在历史版本中 **设为线上**
 
 **方式 2 — 命令行**
 
 ```bash
 cd bundle-server
-./scripts/upload-bundle.sh order 0.0.3 ../rn_app/dist/bundles/ota_order.0.0.3.ios.jsbundle
+./scripts/upload-bundle.sh shared 0.0.7 ../rn_app/dist/bundles/ota_shared.0.0.7.ios.jsbundle
+./scripts/upload-bundle.sh order  0.0.7 ../rn_app/dist/bundles/ota_order.0.0.7.ios.jsbundle
+./scripts/upload-bundle.sh promo  0.0.7 ../rn_app/dist/bundles/ota_promo.0.0.7.ios.jsbundle
 ```
 
 ### 5.4 客户端验证
@@ -288,9 +311,9 @@ curl -X POST http://127.0.0.1:3001/api/features/promo/toggle \
 | E-3 | 注册 moduleName | `screens/remote/featureMeta.ts` |
 | E-4 | 新建 OTA 入口 | `bundles/ota_<id>/index.js` |
 | E-5 | OTA 包装页 | `bundles/ota_<id>/screens/` |
-| E-6 | 注册服务端入口 | Admin 或 `prisma/seed.ts` |
+| E-6 | 注册服务端入口 | Admin 或 `prisma/seed.ts`（含 `shared` 若为新环境） |
 | E-7 | 加入构建列表 | `scripts/build-bundles.js` 的 `bundles` 数组 |
-| E-8 | 构建并上传 | `npm run build:bundles` → upload |
+| E-8 | 构建并上传 | `npm run build:bundles` → upload shared + feature |
 
 日常开发只改 `screens/remote/`；OTA 包装仅在需要不同 badge/文案时改 `bundles/ota_*/screens/`。
 
@@ -350,8 +373,8 @@ cd rn_app && npm install && npm start
 | 步骤 | 操作 | 预期 |
 |------|------|------|
 | G-1 | `npm run brownfield:package:ios` | BrownfieldLib Release 产物更新 |
-| G-2 | `npm run build:bundles` | 子 bundle + hash 正常 |
-| G-3 | upload 全部 Remote 入口 | manifest version/hash 更新 |
+| G-2 | `npm run build:bundles` | shared + 子 bundle + hash 正常 |
+| G-3 | upload shared + 全部 Remote 入口 | manifest `sharedBundle` + features version/hash 更新 |
 | G-4 | `npm run smoke:e2e` | 服务端冒烟通过 |
 | G-5 | Xcode **Release** Run | 核心页正常 |
 | G-6 | OTA 模式进 Remote 页 | split load 成功，无 `useSyncExternalStore` 崩溃 |
@@ -391,13 +414,17 @@ cd rn_app && npm run brownfield:package:ios:debug
 cd rn_app && npm run brownfield:package:ios
 
 # Remote 子 bundle
-cd rn_app && npm run build:bundles
+cd rn_app && npm run build:bundles:dev   # 日常；正式发版用 build:bundles
 cd rn_app && npm run verify:ota-scope
 
 # bundle-server
+cd bundle-server && npm run db:seed      # 首次或重置 DB 后
 cd bundle-server && npm run dev
 cd bundle-server && USE_METRO_BUNDLES=true npm run dev
-cd bundle-server && ./scripts/upload-bundle.sh order 1.0.0 ../rn_app/dist/bundles/ota_order.1.0.0.ios.jsbundle
+cd bundle-server && ./scripts/upload-bundle.sh shared 0.0.7 ../rn_app/dist/bundles/ota_shared.0.0.7.ios.jsbundle
+cd bundle-server && ./scripts/upload-bundle.sh order  0.0.7 ../rn_app/dist/bundles/ota_order.0.0.7.ios.jsbundle
+cd bundle-server && ./scripts/upload-bundle.sh promo  0.0.7 ../rn_app/dist/bundles/ota_promo.0.0.7.ios.jsbundle
+curl -s http://127.0.0.1:3001/api/manifest | jq '{sharedBundle, features: [.features[] | {id, version, sizeBytes}]}'
 
 # 共享 Debug 壳
 ./scripts/build-debug-shell.sh
@@ -418,4 +445,4 @@ cd bundle-server && ./scripts/upload-bundle.sh order 1.0.0 ../rn_app/dist/bundle
 
 ---
 
-*最后更新：2026-07-08*
+*最后更新：2026-07-09*

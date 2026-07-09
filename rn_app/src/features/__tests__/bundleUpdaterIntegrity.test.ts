@@ -50,6 +50,10 @@ jest.mock('../registerFeature', () => ({
   clearOtaComponentCache: jest.fn(),
 }));
 
+jest.mock('../sharedBundleUpdater', () => ({
+  ensureSharedBundleCached: jest.fn(),
+}));
+
 const mockFetchWithRetry = fetchWithRetry as jest.MockedFunction<typeof fetchWithRetry>;
 const mockDeleteCachedBundle = deleteCachedBundle as jest.MockedFunction<
   typeof deleteCachedBundle

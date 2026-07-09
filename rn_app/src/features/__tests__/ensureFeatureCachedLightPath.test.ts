@@ -36,6 +36,15 @@ jest.mock('../registerFeature', () => ({
   clearOtaComponentCache: jest.fn(),
 }));
 
+jest.mock('../sharedBundleUpdater', () => ({
+  ensureSharedBundleCached: jest.fn().mockResolvedValue({
+    shared: null,
+    bundlePath: null,
+    updated: false,
+    cachedVersion: null,
+  }),
+}));
+
 const mockReadCachedMetadata = readCachedMetadata as jest.MockedFunction<
   typeof readCachedMetadata
 >;

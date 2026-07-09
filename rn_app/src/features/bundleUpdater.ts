@@ -38,6 +38,7 @@ import {
 } from './manifest';
 import { wasOtaFeatureLoadedThisSession } from './otaSessionLoad';
 import { peekInstantOtaReentry } from './otaFeatureReuse';
+import { ensureSharedBundleCached } from './sharedBundleUpdater';
 import { clearOtaComponentCache } from './registerFeature';
 import { fetchWithRetry } from './retryWithBackoff';
 
@@ -565,6 +566,16 @@ export async function ensureFeatureCached(
       const message = error instanceof Error ? error.message : 'Manifest unavailable';
       return failedUpdateResult(featureId, message);
     }
+  }
+
+  try {
+    await ensureSharedBundleCached({ manifestUrl });
+  } catch (sharedError) {
+    const message =
+      sharedError instanceof Error
+        ? sharedError.message
+        : 'Shared bundle download failed';
+    return failedUpdateResult(featureId, `OTA 公共依赖 bundle 不可用：${message}`);
   }
 
   const sessionReentry = wasOtaFeatureLoadedThisSession(featureId);

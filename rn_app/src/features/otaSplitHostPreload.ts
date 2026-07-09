@@ -31,4 +31,11 @@ export function preloadOtaSplitHostModules(): void {
   } catch {
     // Optional
   }
+
+  try {
+    require('../../../screens/remote/components');
+    console.log('[OTA] preloaded remote components in host');
+  } catch {
+    // Optional
+  }
 }

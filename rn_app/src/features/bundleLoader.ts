@@ -20,6 +20,7 @@ import { getFeatureSegmentId } from './segmentRegistry';
 import { clearMetroFeatureSessionMark, wasMetroFeatureLoadedThisSession, wasOtaFeatureLoadedThisSession } from './otaSessionLoad';
 import { executeSplitBundleEntry } from './splitBundleEntry';
 import { preloadOtaSplitHostModules } from './otaSplitHostPreload';
+import { ensureSharedSegmentLoaded } from './sharedBundleUpdater';
 import { isSplitBundleLoaderAvailable, SplitBundleLoader } from './splitBundleLoader';
 
 const loadedBundleKeys = new Set<string>();
@@ -212,6 +213,7 @@ export async function loadFeatureBundle(
     localPath?: string | null;
     force?: boolean;
     otaMode?: boolean;
+    manifestUrl?: string;
     /** Re-register native split segment even when JS registration exists (OTA re-entry). */
     ensureSegment?: boolean;
     /** Same-session re-entry: skip native load when OTA registration is already live. */
@@ -239,6 +241,10 @@ export async function loadFeatureBundle(
 
   if (useOta && (localPath || isLocalFileUrl(feature.bundleUrl))) {
     const path = localPath ?? feature.bundleUrl;
+    await ensureSharedSegmentLoaded({
+      manifestUrl: options?.manifestUrl,
+      warmReentry: options?.warmReentry,
+    });
     await loadFromNativeSplitBundle(feature, path, {
       ensureSegment: options?.ensureSegment,
       warmReentry: options?.warmReentry,
@@ -260,6 +266,10 @@ export async function loadFeatureBundle(
 
   if (localPath || isLocalFileUrl(feature.bundleUrl)) {
     const path = localPath ?? feature.bundleUrl;
+    await ensureSharedSegmentLoaded({
+      manifestUrl: options?.manifestUrl,
+      warmReentry: options?.warmReentry,
+    });
     await loadFromNativeSplitBundle(feature, path, {
       ensureSegment: options?.ensureSegment,
       warmReentry: options?.warmReentry,

@@ -35,7 +35,7 @@ Native Shell
 
 ```
 bundle-server (Fastify + Prisma)
-  GET /api/manifest          → 启用的 Remote 入口 + version/hash/bundleUrl
+  GET /api/manifest          → 启用的 Remote 入口 + sharedBundle + version/hash/bundleUrl
   POST /api/bundles/upload   → 上传子 bundle，更新 active release
   GET /bundles/*.jsbundle    → 静态子 bundle
 
@@ -43,7 +43,8 @@ rn_app
   screens/                   → Scheme 1 核心页
   screens/remote/            → Remote 业务页（Metro dev）+ components/ 共享 UI
   index.js                   → 主 bundle：Scheme 1 注册 + Remote registerFeature fallback
-  bundles/ota_{order,promo}/ → OTA split bundle 入口 + screens/（输出 ota_*.ios.jsbundle）
+  bundles/ota_shared/        → 公共 OTA split（React Navigation 等，segment 0）
+  bundles/ota_{order,promo}/ → OTA feature split 入口 + screens/（输出 ota_*.ios.jsbundle）
   src/features/
     FeatureHost              → Remote 容器：manifest → OTA → 渲染
     bundleUpdater            → 版本比对、下载、缓存
@@ -58,6 +59,25 @@ ios_native
 ```
 
 > 详细的双路径说明、目录职责、防误操作护栏见下一节 **[Remote 双路径架构](#remote-双路径架构metro-dev--ota-upload)**。
+
+## OTA 公共 split（`ota_shared`）
+
+React Navigation、screens、gesture-handler 等跨 feature 依赖抽到 **segment 0**，feature split 只保留业务页。
+
+```mermaid
+flowchart LR
+  M[GET /api/manifest] --> S[ota_shared segment 0]
+  S --> O[ota_order segment 1]
+  S --> P[ota_promo segment 2]
+```
+
+| Segment | `feature-segments.json` | 产物 |
+|---------|-------------------------|------|
+| shared | `0` | `ota_shared.<version>.ios.jsbundle` |
+| order | `1` | `ota_order.<version>.ios.jsbundle` |
+| promo | `2` | `ota_promo.<version>.ios.jsbundle` |
+
+客户端：`ensureSharedBundleCached` → `SplitBundleLoader.load(shared, 0)` → 再 load feature。Manifest 顶层 `sharedBundle` 字段；无该字段时走 legacy 单体 split。
 
 ## Remote 双路径架构（Metro dev · OTA upload）
 

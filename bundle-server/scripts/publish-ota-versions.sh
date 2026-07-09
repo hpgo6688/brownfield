@@ -32,8 +32,9 @@ for VERSION in "${VERSIONS[@]}"; do
 
   ORDER_FILE="${DIST}/ota_order.${VERSION}.ios.jsbundle"
   PROMO_FILE="${DIST}/ota_promo.${VERSION}.ios.jsbundle"
+  SHARED_FILE="${DIST}/ota_shared.${VERSION}.ios.jsbundle"
 
-  for FEATURE in order promo; do
+  for FEATURE in shared order promo; do
     FILE="${DIST}/ota_${FEATURE}.${VERSION}.ios.jsbundle"
     if [[ ! -f "${FILE}" ]]; then
       echo "Missing bundle: ${FILE}" >&2

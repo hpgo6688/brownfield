@@ -22,6 +22,20 @@ jest.mock('../remoteConfig', () => ({
   OTA_POLL_INTERVAL_MS: 20_000,
 }));
 
+jest.mock('../sharedBundleUpdater', () => ({
+  ensureSharedBundleCached: jest.fn().mockResolvedValue({
+    shared: null,
+    bundlePath: null,
+    updated: false,
+    cachedVersion: null,
+  }),
+  clearLoadedSharedBundles: jest.fn(),
+}));
+
+jest.mock('../otaSessionLoad', () => ({
+  clearSharedBundleSessionMark: jest.fn(),
+}));
+
 const mockCheckRemoteFeature = checkRemoteFeature as jest.MockedFunction<
   typeof checkRemoteFeature
 >;

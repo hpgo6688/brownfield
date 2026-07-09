@@ -11,6 +11,13 @@ const prisma = new PrismaClient({ adapter });
 
 const remoteEntries = [
   {
+    id: 'shared',
+    title: 'OTA 公共依赖',
+    icon: 'square.stack.3d.up',
+    moduleName: 'ota_SharedDeps',
+    metroEntry: 'bundles/ota_shared/index',
+  },
+  {
     id: 'order',
     title: '订单',
     icon: 'cart',
@@ -51,7 +58,7 @@ async function main() {
     });
   }
 
-  console.log(`Seeded ${remoteEntries.length} Remote entries (order, promo).`);
+  console.log(`Seeded ${remoteEntries.length} Remote entries (shared, order, promo).`);
 }
 
 main()

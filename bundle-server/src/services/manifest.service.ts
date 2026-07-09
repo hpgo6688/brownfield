@@ -12,6 +12,8 @@ const featureSegments = JSON.parse(
   ),
 ) as Record<string, number>;
 
+const SHARED_FEATURE_ID = 'shared';
+
 export type ManifestFeature = {
   id: string;
   title: string;
@@ -22,6 +24,15 @@ export type ManifestFeature = {
   bundleUrl: string;
   minAppVersion: string;
   segmentId: number;
+  sizeBytes?: number | null;
+};
+
+export type ManifestSharedBundle = {
+  version: string;
+  hash: string;
+  bundleUrl: string;
+  segmentId: number;
+  sizeBytes?: number | null;
 };
 
 export type ManifestResponse = {
@@ -29,6 +40,7 @@ export type ManifestResponse = {
   updatedAt: string;
   mode: 'metro' | 'static';
   manifestUrl: string;
+  sharedBundle?: ManifestSharedBundle | null;
   features: ManifestFeature[];
 };
 
@@ -48,6 +60,27 @@ function buildBundleUrl(
   return `${baseUrl}/bundles/${filename}`;
 }
 
+async function resolveBundleSizeBytes(
+  filename: string | undefined,
+  storedSizeBytes?: number | null,
+): Promise<number | null> {
+  if (storedSizeBytes != null) {
+    return storedSizeBytes;
+  }
+
+  if (!filename) {
+    return null;
+  }
+
+  const bundleFilePath = path.join(config.bundlesDir, filename);
+  try {
+    const stat = await fsPromises.stat(bundleFilePath);
+    return stat.size;
+  } catch {
+    return null;
+  }
+}
+
 export async function buildManifest(params: {
   protocol: string;
   host: string;
@@ -61,6 +94,7 @@ export async function buildManifest(params: {
   });
 
   const features: ManifestFeature[] = [];
+  let sharedBundle: ManifestSharedBundle | null = null;
 
   for (const row of rows) {
     if (params.appVersion && semver.valid(params.appVersion) && semver.valid(row.minAppVersion)) {
@@ -71,14 +105,15 @@ export async function buildManifest(params: {
 
     const version = row.activeRelease?.version ?? '0.0.0';
     let hash = row.activeRelease?.hash ?? 'sha256:unset';
+    const filename = row.activeRelease?.filename;
 
-    if (!config.useMetroBundles && row.activeRelease?.filename) {
-      const bundleFilePath = path.join(config.bundlesDir, row.activeRelease.filename);
+    if (!config.useMetroBundles && filename) {
+      const bundleFilePath = path.join(config.bundlesDir, filename);
       try {
         await fsPromises.access(bundleFilePath);
       } catch {
         console.warn(
-          `[manifest] bundle file missing for feature="${row.id}" filename="${row.activeRelease.filename}"`,
+          `[manifest] bundle file missing for feature="${row.id}" filename="${filename}"`,
         );
         hash = 'sha256:unset';
       }
@@ -89,6 +124,24 @@ export async function buildManifest(params: {
       throw new Error(`Missing segment id for feature "${row.id}" in feature-segments.json`);
     }
 
+    const sizeBytes = await resolveBundleSizeBytes(
+      filename,
+      row.activeRelease?.sizeBytes,
+    );
+
+    const bundleUrl = buildBundleUrl(baseUrl, row);
+
+    if (row.id === SHARED_FEATURE_ID) {
+      sharedBundle = {
+        version,
+        hash,
+        bundleUrl,
+        segmentId,
+        sizeBytes,
+      };
+      continue;
+    }
+
     features.push({
       id: row.id,
       title: row.title,
@@ -96,9 +149,10 @@ export async function buildManifest(params: {
       moduleName: row.moduleName,
       version,
       hash,
-      bundleUrl: buildBundleUrl(baseUrl, row),
+      bundleUrl,
       minAppVersion: row.minAppVersion,
       segmentId,
+      sizeBytes,
     });
   }
 
@@ -107,6 +161,7 @@ export async function buildManifest(params: {
     updatedAt: new Date().toISOString(),
     mode: config.useMetroBundles ? 'metro' : 'static',
     manifestUrl: `${baseUrl}/api/manifest`,
+    sharedBundle,
     features,
   };
 }

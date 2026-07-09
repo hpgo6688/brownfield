@@ -8,6 +8,8 @@ Metro dev（`npm start`）**不会**加载此目录下的屏幕源码。
 
 ```
 bundles/
+├── ota_shared/
+│   └── index.js          ← 公共依赖入口（React Navigation 等，segment 0）
 ├── ota_order/
 │   ├── index.js          ← 入口：registerFeature + AppRegistry（ota_OrderScreen）
 │   └── screens/          ← OTA 包装页（BUILD/UPLOAD ONLY）
@@ -22,6 +24,7 @@ bundles/
 
 | 部分 | 用途 |
 |------|------|
+| `ota_shared/index.js` | 公共 split（导航栈、screens、gesture-handler） |
 | `ota_<featureId>/index.js` | split bundle 入口，注册 `ota_*` 模块名 |
 | `ota_<featureId>/screens/` | OTA 专用包装（badge：`OTA · 远程 Bundle`） |
 | 构建产物（RN 侧） | `bundle-server/dist/bundles/ota_<id>.<version>.ios.jsbundle` |
@@ -39,11 +42,12 @@ npm run build:bundles:dev    # DEV；发版用 npm run build:bundles
 # 3. 上传（版本号与 package.json 一致）
 cd ../bundle-server
 npm run dev
+./scripts/upload-bundle.sh shared 0.0.7 dist/bundles/ota_shared.0.0.7.ios.jsbundle
 ./scripts/upload-bundle.sh order 0.0.7 dist/bundles/ota_order.0.0.7.ios.jsbundle
 ./scripts/upload-bundle.sh promo 0.0.7 dist/bundles/ota_promo.0.0.7.ios.jsbundle
 
-# 4. 校验
-curl -s http://127.0.0.1:3001/api/manifest | jq '.features[] | {id, version, hash}'
+# 4. 校验（含 sharedBundle）
+curl -s http://127.0.0.1:3001/api/manifest | jq '{sharedBundle, features: [.features[] | {id, version, sizeBytes}]}'
 ```
 
 ## 日常 UI 开发改哪里？

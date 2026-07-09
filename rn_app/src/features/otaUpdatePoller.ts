@@ -11,6 +11,8 @@ import {
   matchesRemoteRelease,
 } from './bundleUpdater';
 import { bumpOtaBundleRevision, getForceOtaInDev, OTA_POLL_INTERVAL_MS } from './remoteConfig';
+import { ensureSharedBundleCached, clearLoadedSharedBundles } from './sharedBundleUpdater';
+import { clearSharedBundleSessionMark } from './otaSessionLoad';
 import { FetchRetryError, OTA_RETRY_MAX_ATTEMPTS } from './retryWithBackoff';
 
 export type OtaPollState = {
@@ -151,6 +153,9 @@ export function useOtaUpdatePoller({
       setActiveVersion(active.version);
 
       if (__DEV__ && getForceOtaInDev()) {
+        clearSharedBundleSessionMark();
+        clearLoadedSharedBundles();
+        await ensureSharedBundleCached({ manifestUrl });
         DevSettings.reload();
         return;
       }

@@ -3,6 +3,8 @@ declare global {
   var __OTA_LOADED_THIS_SESSION__: Set<string> | undefined;
   // eslint-disable-next-line no-var
   var __METRO_LOADED_THIS_SESSION__: Set<string> | undefined;
+  // eslint-disable-next-line no-var
+  var __SHARED_BUNDLE_LOADED_THIS_SESSION__: string | undefined;
 }
 
 function loadedSet(): Set<string> {
@@ -48,4 +50,17 @@ export function clearMetroFeatureSessionMark(featureId: string): void {
 export function clearAllFeatureSessionMarks(featureId: string): void {
   clearOtaFeatureSessionMark(featureId);
   clearMetroFeatureSessionMark(featureId);
+}
+
+/** Shared OTA segment loaded in this JS runtime (version string). */
+export function wasSharedBundleLoadedThisSession(version: string): boolean {
+  return global.__SHARED_BUNDLE_LOADED_THIS_SESSION__ === version;
+}
+
+export function markSharedBundleLoadedThisSession(version: string): void {
+  global.__SHARED_BUNDLE_LOADED_THIS_SESSION__ = version;
+}
+
+export function clearSharedBundleSessionMark(): void {
+  global.__SHARED_BUNDLE_LOADED_THIS_SESSION__ = undefined;
 }

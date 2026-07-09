@@ -12,6 +12,15 @@ export type RemoteFeature = {
   minAppVersion: string;
   /** Metro split-bundle segment id — must match config/feature-segments.json */
   segmentId?: number;
+  sizeBytes?: number | null;
+};
+
+export type SharedBundle = {
+  version: string;
+  hash: string;
+  bundleUrl: string;
+  segmentId: number;
+  sizeBytes?: number | null;
 };
 
 export type BundleManifest = {
@@ -19,6 +28,7 @@ export type BundleManifest = {
   updatedAt: string;
   mode: 'metro' | 'static';
   manifestUrl: string;
+  sharedBundle?: SharedBundle | null;
   features: RemoteFeature[];
 };
 
