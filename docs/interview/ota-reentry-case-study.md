@@ -2,6 +2,7 @@
 
 > **用途**：面试复盘（STAR / 架构 / 根因 / 最终方案）。  
 > **口述速查**：[ota-reentry-cheat-sheet.md](./ota-reentry-cheat-sheet.md)（半页纸）  
+> **术语词典**：[fixes/GLOSSARY.md](../fixes/GLOSSARY.md)  
 > **项目**：Native Shell + RN 主包 + Remote OTA split bundle（order / promo）。  
 > **栈**：RN 0.86 · New Architecture（Fabric / Bridgeless）· iOS `SplitBundleLoader` · Metro split bundle。
 
@@ -201,19 +202,19 @@ Metro → OTA → 多次进出 Order 稳定；第二次 loading 从 ~3s 降到�
 
 ---
 
-## 文档索引（历史 vs 最终）
+## 文档索引
 
 | 文档 | 状态 | 说明 |
 |------|------|------|
-| **本文** | ✅ 面试主文档 | 含最终方案 + 废弃方案对照 |
+| **本文** | ✅ 面试主文档 | STAR + 废弃方案对照 |
+| [fixes/README.md](../fixes/README.md) | ✅ **修复记录总索引** | 问题簇 + `stories/` 面试叙事 |
+| [fixes/stories/01-ota-reentry-registry-lifecycle.md](../fixes/stories/01-ota-reentry-registry-lifecycle.md) | ✅ 主题叙事 | 与本文互补，偏演进时间线 |
 | [case-study-remote-ota-metro-isolation.md](../case-study-remote-ota-metro-isolation.md) | ✅ 架构总览 | Metro/OTA 双路径、ota_ 前缀 |
 | [2026-07-08-ota-register-feature-not-called.md](../fixes/2026-07-08-ota-register-feature-not-called.md) | ✅ 基础机制 | `executeSplitBundleEntry` 由来 |
 | [2026-07-08-ota-mode-switch-registration-lost.md](../fixes/2026-07-08-ota-mode-switch-registration-lost.md) | ✅ 基础机制 | component cache 设计 |
-| [2026-07-09-ota-second-entry-load-register-fix.md](../fixes/2026-07-09-ota-second-entry-load-register-fix.md) | ✅ 最终 fix 摘要 | 与本文一致，偏 commit 记录 |
-| [2026-07-09-ota-second-entry-load-failure-analysis.md](../fixes/2026-07-09-ota-second-entry-load-failure-analysis.md) | 📋 排查笔记 | 部分假设已被 Bridgeless 行为修正 |
-| [2026-07-09-ota-fast-path-unknown-module.md](../fixes/2026-07-09-ota-fast-path-unknown-module.md) | ⚠️ 中间方案 | fast path 已废弃 |
-| [2026-07-09-ota-metro-second-entry-unknown-module.md](../fixes/2026-07-09-ota-metro-second-entry-unknown-module.md) | ⚠️ 中间方案 | reload / full eval 已废弃 |
-| [2026-07-09-ota-remote-bundle-reuse.md](../fixes/2026-07-09-ota-remote-bundle-reuse.md) | ⚠️ 部分 superseded | fast path 描述已不适用；完整性校验仍有效 |
+| [2026-07-09-ota-second-entry-load-register-fix.md](../fixes/2026-07-09-ota-second-entry-load-register-fix.md) | ✅ 最终 fix 摘要 | commit 级记录 |
+| [2026-07-09-ota-dev-session-fixes-summary.md](../fixes/2026-07-09-ota-dev-session-fixes-summary.md) | ✅ 工程总览 | 三问题簇 A/B/C |
+| [archive/](../fixes/archive/) | 📦 归档 | 排查笔记 + 已废弃中间方案 |
 
 ---
 

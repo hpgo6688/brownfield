@@ -404,7 +404,7 @@ cd rn_app && npm install && npm start
 | OTA 404 不重试 | release 已从 DB/磁盘删除 | 立即失败；有本地 cache 则继续用；无 cache → 错误页提示 re-upload |
 | manifest hash unset | DB 有 release 但磁盘无文件 | Admin 重新 upload 或检查 `data/bundles/`；勿与 503  transient 混淆 |
 
-详细修复记录：[docs/fixes/](./fixes/)
+详细修复记录：[docs/fixes/README.md](./fixes/README.md)（索引 + 面试叙事 `stories/`）
 
 ---
 

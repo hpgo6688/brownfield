@@ -176,7 +176,7 @@ build-bundles.js bundles[]    ← 构建列表
 | load 顺序 | unknown module | shared → feature 契约 |
 | verify 脚本 | PR 门禁 | `npm run verify` |
 
-**5 分钟定位原则：** 出问题能区分是 **壳 / OTA / Metro / split 图 / 服务端** 哪一层。Fix 记录见 [docs/fixes/](./fixes/)。
+**5 分钟定位原则：** 出问题能区分是 **壳 / OTA / Metro / split 图 / 服务端** 哪一层。Fix 记录见 [docs/fixes/README.md](./fixes/README.md)（索引 + 面试叙事 `stories/`）。
 
 ### 5.5 治理机制（Governance）
 

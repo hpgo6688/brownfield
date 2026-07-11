@@ -5,7 +5,7 @@
 **Scope**: iOS bridgeless OTA、`FeatureHost`、split bundle 构建与缓存、bundle-server 发布  
 **Release**: `order` / `promo` **v0.0.7** 已 upload（含新 split 构建策略）
 
-> 细分记录见文末「相关文档」。面试口述见 [docs/interview/ota-reentry-case-study.md](../interview/ota-reentry-case-study.md)。
+> 细分记录见 [docs/fixes/README.md](./README.md)（问题簇索引 + `stories/` 面试叙事）。面试口述见 [docs/interview/ota-reentry-case-study.md](../interview/ota-reentry-case-study.md)。
 
 ---
 
@@ -169,7 +169,7 @@ cd bundle-server
 
 - `LeakChecker` Surface 泄漏（反复 mount）单独排查
 - 每次 `Metro --reset-cache` 或改 split 归属后：**rebuild + upload**
-- 面试材料以 [ota-reentry-case-study.md](../interview/ota-reentry-case-study.md) 为准；本总览供工程落地检索
+- 面试材料以 [ota-reentry-case-study.md](../interview/ota-reentry-case-study.md) 与 [fixes/stories/](./stories/) 为准；本总览供工程落地检索
 
 ---
 
@@ -177,8 +177,10 @@ cd bundle-server
 
 | 文档 | 内容 |
 |------|------|
-| [ota-metro-switch-registry-restore.md](./2026-07-09-ota-metro-switch-registry-restore.md) | 问题簇 A |
-| [ota-split-shared-deps-unknown-module.md](./2026-07-09-ota-split-shared-deps-unknown-module.md) | 问题簇 B + C 补充 |
-| [ota-second-entry-load-register-fix.md](./2026-07-09-ota-second-entry-load-register-fix.md) | 早期 re-entry register 修复 |
-| [ota-second-entry-load-failure-analysis.md](./2026-07-09-ota-second-entry-load-failure-analysis.md) | 排查笔记（部分已 superseded） |
-| [ota-fast-path-unknown-module.md](./2026-07-09-ota-fast-path-unknown-module.md) | 已废弃 fast path 方案 |
+| [README.md](./README.md) | 修复记录总索引 |
+| [stories/01-ota-reentry-registry-lifecycle.md](./stories/01-ota-reentry-registry-lifecycle.md) | 问题簇 A 面试叙事 |
+| [stories/02-split-module-graph-and-shared-bundle.md](./stories/02-split-module-graph-and-shared-bundle.md) | 问题簇 B 面试叙事 |
+| [ota-metro-switch-registry-restore.md](./2026-07-09-ota-metro-switch-registry-restore.md) | 问题簇 A — Metro 切换 |
+| [ota-split-shared-deps-unknown-module.md](./2026-07-09-ota-split-shared-deps-unknown-module.md) | 问题簇 B + C |
+| [ota-second-entry-load-register-fix.md](./2026-07-09-ota-second-entry-load-register-fix.md) | re-entry 最终 fix |
+| [archive/](./archive/) | 排查笔记 + 已废弃中间方案 |

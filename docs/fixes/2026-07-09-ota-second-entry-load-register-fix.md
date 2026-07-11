@@ -22,7 +22,7 @@
    - 第二次进入时 entry 模块已 `isInitialized`，`__r(entry)` **不会重跑 factory**，`registerFeature` 不再执行
    - `executeSplitBundleEntry` 在 `syncOtaRegistrationFromCache` 之前以 `requireRegistration` 抛错
 
-详见 [2026-07-09-ota-second-entry-load-failure-analysis.md](./2026-07-09-ota-second-entry-load-failure-analysis.md)。
+详见 [archive/2026-07-09-ota-second-entry-load-failure-analysis.md](./archive/2026-07-09-ota-second-entry-load-failure-analysis.md)（排查笔记，已归档）。
 
 ## 解决方案
 

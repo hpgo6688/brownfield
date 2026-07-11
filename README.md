@@ -136,7 +136,7 @@ curl -s http://127.0.0.1:3001/api/manifest | jq '.features[] | {id, version, has
 
 - `Metro --reset-cache` 或改 split 排除策略后，须重新 `build:bundles` + upload，否则易出现 `unknown module`。
 - 模拟器若仍用旧沙盒缓存，可 Delete App 重装，或 bump 版本号强制下载。
-- 修复记录见 [docs/fixes/2026-07-09-ota-dev-session-fixes-summary.md](docs/fixes/2026-07-09-ota-dev-session-fixes-summary.md)。
+- 修复记录见 [docs/fixes/README.md](docs/fixes/README.md)（问题簇索引）；工程总览 [2026-07-09-ota-dev-session-fixes-summary.md](docs/fixes/2026-07-09-ota-dev-session-fixes-summary.md)。
 
 ---
 
